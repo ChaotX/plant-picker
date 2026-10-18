@@ -391,6 +391,141 @@ h3 {
 
 /* ---- Builder ---- */
 
+.builder {
+    padding: 0;
+}
+
+.builder-head {
+    padding: 10px 16px;
+}
+
+.builder-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.builder-toggle {
+    border: 1px solid var(--border);
+    background: var(--bg);
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.builder-toggle .chevron {
+    display: inline-block;
+    transition: transform 0.15s;
+}
+
+.builder.collapsed .builder-toggle .chevron {
+    transform: rotate(-90deg);
+}
+
+input.query-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 18px;
+    font-weight: 600;
+    border-color: transparent;
+    background: transparent;
+}
+
+input.query-name:hover, input.query-name:focus {
+    border-color: var(--border);
+    background: var(--input);
+}
+
+.builder-body {
+    padding: 4px 16px 16px;
+    border-top: 1px solid var(--border);
+}
+
+.builder.collapsed .builder-body {
+    display: none;
+}
+
+.builder-summary {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 0 44px;
+    cursor: pointer;
+}
+
+.builder.collapsed .builder-summary {
+    display: flex;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 4px 10px;
+    border: 1px solid var(--green);
+    border-radius: 999px;
+    background: var(--green-light);
+    color: var(--text);
+    font-size: 13.5px;
+    cursor: pointer;
+}
+
+.chip-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 340px;
+}
+
+.chip-count {
+    color: var(--green);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.chip.excluded {
+    border-color: var(--red);
+    background: var(--red-light);
+}
+
+.chip.skipped {
+    border-style: dashed;
+    border-color: var(--muted);
+    background: none;
+    color: var(--muted);
+}
+
+.chip.sort {
+    border-color: var(--border);
+    background: none;
+}
+
+.joiner {
+    color: var(--muted);
+    font-size: 12.5px;
+    text-transform: uppercase;
+}
+
+.chain {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--green);
+    white-space: nowrap;
+}
+
+.chain:empty {
+    display: none;
+}
+
+.chain.zero {
+    color: var(--red);
+}
+
 .tab-line {
     display: flex;
     align-items: center;

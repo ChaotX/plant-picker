@@ -132,8 +132,11 @@ async function pickFromDrive(fileId = '') {
 // ---------- loading ----------
 
 // Loads the spreadsheet and tab a query names, then shows the builder. Errors become a message with the next step.
-async function openQuery(query, { short = null } = {}) {
+// keepPanel: a reload keeps the filter panel as it is; otherwise a query that already has filters or a sort (an
+// opened link) starts with the panel closed, so the results are in view.
+async function openQuery(query, { short = null, keepPanel = false } = {}) {
     state.short = short;
+    if (!keepPanel) state.builderCtx = { collapsed: query.q.items.length > 0 || query.o.length > 0 };
     showLoading(t('loadingSheet'));
     let spreadsheet;
     try {
@@ -272,7 +275,7 @@ function rememberRecent(spreadsheet, tab) {
 async function reload() {
     if (!state.spreadsheet) return;
     const keepShort = state.short;
-    await openQuery(state.query, { short: keepShort });
+    await openQuery(state.query, { short: keepShort, keepPanel: true });
 }
 
 // ---------- rendering ----------
@@ -333,6 +336,7 @@ const syncUrl = debounce(async () => {
     const short = state.short && state.short.query === state.code;
     const search = short ? `?l=${state.short.id}` : `?q=${state.code}`;
     history.replaceState(null, '', `${location.pathname}${search}`);
+    document.title = state.query.n ? `${state.query.n} – plant-picker` : 'plant-picker';
     renderShareBar();
 }, 120);
 
@@ -357,11 +361,11 @@ function renderShareBar() {
     const bar = $('#shareBar');
     const short = state.short;
     const modified = short && short.query !== state.code;
-    const name = el('input', { type: 'text', class: 'name-input', placeholder: t('linkName'), value: short?.name || '', maxlength: 80 });
+    // The name is part of the query (edited at the top of the filter panel), so a rename also counts as a change.
     const save = async (asNew) => {
         try {
             if (!hasValidToken()) await signIn();
-            const label = name.value.trim();
+            const label = state.query.n || '';
             if (short && !asNew) {
                 await updateLink(short.id, state.code, label);
                 state.short = { ...short, name: label, query: state.code };
@@ -376,17 +380,12 @@ function renderShareBar() {
             toast(`${t('linkSaveFailed')}: ${error.message}`, 'error');
         }
     };
-    const unchanged = () => !modified && name.value.trim() === (short?.name || '');
-    const updateButton = short ? el('button', { class: 'btn', disabled: unchanged(), onclick: () => save(false), title: t('updateLinkHint') }, `💾 ${t('updateLink', { id: short.id })}`) : null;
-    name.addEventListener('input', () => {
-        if (updateButton) updateButton.disabled = unchanged();
-    });
+    const updateButton = short ? el('button', { class: 'btn', disabled: !modified, onclick: () => save(false), title: t('updateLinkHint') }, `💾 ${t('updateLink', { id: short.id })}`) : null;
     bar.replaceChildren(
         el('div', { class: 'share-row' },
             el('button', { class: 'btn primary', onclick: () => copy(fullLink(), t('linkCopied')), title: t('copyLinkHint') }, `🔗 ${t('copyLink')}`),
             el('span', { class: 'muted small link-len' }, t('linkLength', { n: fullLink().length })),
             el('span', { class: 'spacer' }),
-            isConfigured() ? name : null,
             isConfigured() && short
                 ? [
                     updateButton,
@@ -453,7 +452,8 @@ async function openShort(id) {
                 return;
             }
             const query = await decodeQuery(link.query);
-            await openQuery(query, { short: { id, name: link.name, query: link.query } });
+            query.n = query.n || link.name; // links saved before names were part of the query
+            await openQuery(query, { short: { id, name: query.n, query: link.query } });
         } catch (error) {
             showMessage(t('err_otherTitle'), error.message, [{ label: t('tryAgain'), run: resolve, primary: true }, { label: t('openAnother'), run: showStart }]);
         }

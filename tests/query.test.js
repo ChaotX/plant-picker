@@ -98,6 +98,19 @@ test('counts per top-level filter: alone and without', () => {
     assert.ok(rows.length <= evelo);
 });
 
+test('running counts along the chain: falling with and, rising with or, also inside groups', () => {
+    const f = v => ({ ...newFilter('Típus', 'in'), v: [v] });
+    const and = runQuery(query([newFilter('Mérgező', 'flag'), f('Évelő')]), table);
+    assert.equal(and.counts.get('0').upTo, and.counts.get('0').alone);
+    assert.equal(and.counts.get('1').upTo, and.rows.length);
+    assert.ok(and.counts.get('1').upTo <= and.counts.get('0').upTo);
+    const or = runQuery(query([f('Évelő'), f('Talajtakaró')], 'or'), table);
+    assert.equal(or.counts.get('1').upTo, or.counts.get('0').alone + or.counts.get('1').alone);
+    const nested = runQuery(query([{ op: 'or', items: [f('Évelő'), f('Talajtakaró')] }]), table);
+    assert.equal(nested.counts.get('0.1').upTo, or.counts.get('1').upTo);
+    assert.equal(nested.counts.get('0.1').without, undefined);
+});
+
 test('default visible columns: first two plus the used ones', () => {
     const q = query([newFilter('Mérgező', 'flag')], 'and', { o: [{ c: 'Típus', d: 'asc' }] });
     const { visible } = runQuery(q, table);

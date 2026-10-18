@@ -42,6 +42,7 @@ export function compact(query) {
         return out;
     };
     const out = { v: query.v || QUERY_VERSION, s: query.s, q: strip(query.q) };
+    if (query.n) out.n = query.n;
     if (query.g !== null && query.g !== undefined) out.g = query.g;
     if (query.t) out.t = query.t;
     if (query.o?.length) out.o = query.o.map(o => ({ c: o.c, ...(o.d === 'desc' ? { d: 'desc' } : {}), ...(o.by === 'max' ? { by: 'max' } : {}) }));
@@ -67,6 +68,7 @@ export function expand(data) {
     };
     return {
         v: data.v || QUERY_VERSION,
+        n: typeof data.n === 'string' ? data.n.slice(0, 120) : '',
         s: data.s,
         g: Number.isFinite(data.g) ? data.g : null,
         t: data.t || '',

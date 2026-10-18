@@ -11,9 +11,43 @@ import { debounce } from '../util.js';
 const KIND_ICON = { flag: '◐', range: '↔', enum: '☰', list: '⋯', text: 'T' };
 const CHECKLIST_SEARCH_FROM = 10;
 
+// The panel: a header that always shows (open / close, the query's name, a one-line summary when closed) and the
+// body with the tab, filters, sort and columns.
 export function renderBuilder(root, ctx) {
+    root.classList.toggle('collapsed', Boolean(ctx.collapsed));
+    root.replaceChildren(renderHead(root, ctx), el('div', { class: 'builder-body' }, renderBody(ctx)));
+}
+
+function setCollapsed(root, ctx, collapsed) {
+    ctx.collapsed = collapsed;
+    root.classList.toggle('collapsed', collapsed);
+    const toggle = root.querySelector('.builder-toggle');
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.title = collapsed ? t('expandFilters') : t('collapseFilters');
+}
+
+function renderHead(root, ctx) {
+    const toggle = el('button', { class: 'builder-toggle', 'aria-expanded': String(!ctx.collapsed), title: ctx.collapsed ? t('expandFilters') : t('collapseFilters') },
+        el('span', { class: 'chevron' }, '▾'));
+    toggle.addEventListener('click', () => setCollapsed(root, ctx, !ctx.collapsed));
+    const nameChanged = debounce(() => ctx.onChange(false), 300);
+    const name = el('input', { type: 'text', class: 'query-name', value: ctx.query.n || '', placeholder: t('namePlaceholder'), maxlength: 120, 'aria-label': t('nameLabel') });
+    name.addEventListener('input', () => {
+        ctx.query.n = name.value.trim();
+        nameChanged();
+    });
+    const summary = el('div', { class: 'builder-summary' });
+    summary.addEventListener('click', e => {
+        const chip = e.target.closest('[data-goto]');
+        setCollapsed(root, ctx, false);
+        if (chip) root.querySelector(`.card[data-path="${chip.dataset.goto}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return el('div', { class: 'builder-head' }, el('div', { class: 'builder-title' }, toggle, name), summary);
+}
+
+function renderBody(ctx) {
     const { query } = ctx;
-    root.replaceChildren(
+    return [
         tabLine(ctx),
         el('div', { class: 'match-line' },
             el('span', {}, t('matchPrefix')),
@@ -25,7 +59,7 @@ export function renderBuilder(root, ctx) {
             el('button', { class: 'btn ghost', onclick: () => addGroup(ctx), title: t('addGroupHint') }, `+ ${t('addGroup')}`)),
         renderSort(ctx),
         renderColumns(ctx)
-    );
+    ];
 }
 
 // Which tab of the spreadsheet is the data (switching keeps the filters; ones that don't fit get warnings).
@@ -115,6 +149,7 @@ function renderGroup(group, path, ctx) {
             el('span', { class: 'spacer' }),
             excludeToggle(group, ctx),
             el('span', { class: 'badge', title: t('badgeHint') }),
+            el('span', { class: 'chain' }),
             el('button', { class: 'icon', title: t('remove'), onclick: () => removeNode(ctx, path) }, '✕')),
         el('div', { class: 'filter-list' }, group.items.map((child, i) => renderFilter(child, `${path}.${i}`, ctx))),
         el('div', { class: 'add-row' }, el('button', { class: 'btn small ghost', onclick: () => addFilter(group, ctx) }, `+ ${t('addFilterToGroup')}`)),
@@ -147,6 +182,7 @@ function renderFilter(filter, path, ctx) {
             el('span', { class: 'spacer' }),
             excludeToggle(filter, ctx),
             el('span', { class: 'badge', title: t('badgeHint') }),
+            el('span', { class: 'chain' }),
             el('button', { class: 'icon', title: t('remove'), onclick: () => removeNode(ctx, path) }, '✕')),
         el('div', { class: 'card-body' }, col.index >= 0 ? renderEditor(filter, table.profiles[col.index], ctx) : null),
         el('div', { class: 'issues' }));
@@ -425,13 +461,24 @@ export function issueText(issue) {
 }
 
 export function updateBuilder(root, ctx, result) {
+    renderSummary(root, ctx, result);
     for (const card of root.querySelectorAll('.card[data-path]')) {
         const path = card.dataset.path;
         const badge = card.querySelector(':scope > .card-head > .badge');
+        const chain = card.querySelector(':scope > .card-head > .chain');
         const count = result.counts.get(path);
         if (badge) {
             badge.textContent = count ? t('badge', { n: count.alone }) : '';
             badge.classList.toggle('zero', Boolean(count) && count.alone === 0);
+        }
+        // The running count: this one combined with the ones above it (by the group's and / or).
+        const index = Number(path.split('.').pop());
+        if (chain) {
+            const group = path.includes('.') ? nodeAt(ctx.query, path.split('.').slice(0, -1).join('.')) : ctx.query.q;
+            const show = Boolean(count) && index > 0;
+            chain.textContent = show ? `→ ${count.upTo}` : '';
+            chain.title = show ? t(group.op === 'or' ? 'chainHintOr' : 'chainHintAnd', { n: count.upTo }) : '';
+            chain.classList.toggle('zero', show && count.upTo === 0);
         }
         const issues = (result.issues.get(path) || []).filter(i => i.level !== 'info');
         const box = card.querySelector(':scope > .issues');
@@ -452,6 +499,34 @@ export function updateBuilder(root, ctx, result) {
                 }, t('useColumn', { column: issue.params.suggestion }))
                 : null)));
     }
+}
+
+// The closed panel's one-liner: each top-level filter as a chip with the running count, joined by and / or,
+// then the sort. Clicking a chip opens the panel at that filter.
+function renderSummary(root, ctx, result) {
+    const box = root.querySelector('.builder-summary');
+    if (!box) return;
+    const { query } = ctx;
+    const joiner = query.q.op === 'or' ? t('or') : t('and');
+    const parts = [];
+    query.q.items.forEach((node, i) => {
+        const path = String(i);
+        const count = result.counts.get(path);
+        const issues = result.issues.get(path) || [];
+        const skipped = issues.some(x => x.level === 'skip');
+        if (i > 0) parts.push(el('span', { class: 'joiner' }, joiner));
+        const text = describeNode(node);
+        parts.push(el('button', {
+            class: `chip${node.not ? ' excluded' : ''}${skipped ? ' skipped' : ''}`,
+            dataset: { goto: path },
+            title: text
+        }, el('span', { class: 'chip-text' }, text), count ? el('span', { class: 'chip-count' }, `→ ${count.upTo}`) : null));
+    });
+    if (!parts.length) parts.push(el('span', { class: 'muted' }, t('noFiltersYet')));
+    if (query.o.length) {
+        parts.push(el('span', { class: 'chip sort', title: t('sortTitle') }, `⇅ ${query.o.map(o => `${o.c} ${o.d === 'desc' ? '↓' : '↑'}`).join(', ')}`));
+    }
+    box.replaceChildren(...parts);
 }
 
 // Short human description of a top-level node, for the "no results" help.

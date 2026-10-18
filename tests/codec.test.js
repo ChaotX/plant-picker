@@ -5,6 +5,7 @@ import { emptyQuery, newFilter } from '../js/query.js';
 
 const sample = {
     ...emptyQuery('TEST_SPREADSHEET_ID_00000000000000000000000', 123456, 'Növények'),
+    n: 'Árnyéktűrő sövény',
     q: {
         op: 'and',
         items: [
@@ -24,6 +25,7 @@ test('round trip keeps the query', async () => {
     const back = await decodeQuery(code);
     assert.deepEqual(compact(back), compact(sample));
     assert.equal(back.q.items[2].not, true);
+    assert.equal(back.n, 'Árnyéktűrő sövény');
     assert.equal(back.q.items[3].items[0].how, 'overlap');
 });
 

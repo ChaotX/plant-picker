@@ -7,7 +7,7 @@ import { cellText, compareText, fold, isSet, looseKey, parseRange, splitList, sp
 export const QUERY_VERSION = 1;
 
 export function emptyQuery(spreadsheetId = '', gid = null, tabTitle = '') {
-    return { v: QUERY_VERSION, s: spreadsheetId, g: gid, t: tabTitle, q: { op: 'and', items: [] }, o: [], cols: null };
+    return { v: QUERY_VERSION, n: '', s: spreadsheetId, g: gid, t: tabTitle, q: { op: 'and', items: [] }, o: [], cols: null };
 }
 
 export function isGroup(node) {
@@ -300,20 +300,31 @@ export function sortRows(rows, table, sort) {
 }
 
 // Runs the query. Returns { rows (sorted row indexes), issues, notes, sort, visible, counts } where counts maps
-// each top-level node path to { alone: rows it lets through by itself, without: rows if it were removed }.
+// each node path to { alone: rows it lets through by itself, upTo: rows matching it combined with the nodes
+// before it in its group (the running count along the and / or chain), without (top level only): rows if it
+// were removed }.
 export function runQuery(query, table) {
     const { root, issues } = resolveQuery(query, table);
     const all = table.text.map((_, r) => r);
     const rows = all.filter(r => root(r) !== false);
+    const countOf = q => {
+        const fn = resolveQuery({ ...query, q }, table).root;
+        return all.filter(r => fn(r) !== false).length;
+    };
     const counts = new Map();
-    query.q.items.forEach((node, i) => {
-        const single = resolveQuery({ ...query, q: { op: 'and', items: [node] } }, table).root;
-        const rest = resolveQuery({ ...query, q: { ...query.q, items: query.q.items.filter((_, j) => j !== i) } }, table).root;
-        counts.set(String(i), {
-            alone: all.filter(r => single(r) !== false).length,
-            without: all.filter(r => rest(r) !== false).length
+    const visit = (group, prefix) => {
+        group.items.forEach((node, i) => {
+            const path = prefix ? `${prefix}.${i}` : String(i);
+            const entry = {
+                alone: countOf({ op: 'and', items: [node] }),
+                upTo: countOf({ op: group.op, items: group.items.slice(0, i + 1) })
+            };
+            if (!prefix) entry.without = countOf({ ...group, items: group.items.filter((_, j) => j !== i) });
+            counts.set(path, entry);
+            if (isGroup(node)) visit(node, path);
         });
-    });
+    };
+    visit(query.q, '');
     const { sort, visible, notes } = resolveColumns(query, table);
     return { rows: sortRows(rows, table, sort), issues, notes, sort, visible, counts };
 }
