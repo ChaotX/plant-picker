@@ -3,7 +3,7 @@
 
 import { EXAMPLE_SHEET } from './config.js';
 import { encodeQuery, decodeQuery } from './codec.js';
-import { LoadError, findTab, largestTab, loadSpreadsheet, loadTab } from './data.js';
+import { LoadError, findTab, loadSpreadsheet, loadTab } from './data.js';
 import { hasSignedInBefore, hasValidToken, isConfigured, requestToken, signOut } from './google-auth.js';
 import { applyTranslations, getLanguage, LANGUAGES, setLanguage, t } from './i18n.js';
 import { pickSpreadsheet, spreadsheetIdFromUrl } from './picker.js';
@@ -51,7 +51,7 @@ function showMessage(title, text, actions = [], kind = 'error') {
     $('#messageTitle').textContent = title;
     $('#messageText').replaceChildren(...[].concat(text).map(p => el('p', {}, p)));
     $('#messageBox').dataset.kind = kind;
-    $('#messageActions').replaceChildren(...actions.map(a => el('button', { class: `btn${a.primary ? ' primary' : ''}`, onclick: a.run }, a.label)));
+    $('#messageActions').replaceChildren(...actions.map(a => el('button', { class: `btn${a.primary ? ' primary' : ''}${a.ghost ? ' ghost' : ''}`, onclick: a.run }, a.label)));
     showScreen('messageScreen');
 }
 
@@ -146,7 +146,11 @@ async function openQuery(query, { short = null } = {}) {
     let tabNote = '';
     try {
         if (query.g === null && !query.t) {
-            tab = defaultTab(spreadsheet);
+            tab = rememberedTab(spreadsheet);
+            if (!tab) {
+                chooseTab(spreadsheet, query);
+                return;
+            }
         } else {
             const found = findTab(spreadsheet, query.g, query.t);
             tab = found.tab;
@@ -159,10 +163,26 @@ async function openQuery(query, { short = null } = {}) {
     await openTab(spreadsheet, tab, query, tabNote);
 }
 
-function defaultTab(spreadsheet) {
+// The tab used last time for this spreadsheet, or the only one; null when the user has to choose.
+function rememberedTab(spreadsheet) {
+    if (spreadsheet.tabs.length === 1) return spreadsheet.tabs[0];
     const remembered = storage.get(RECENT_KEY, []).find(r => r.id === spreadsheet.id);
-    const byGid = remembered && spreadsheet.tabs.find(tab => tab.gid === remembered.gid);
-    return byGid || largestTab(spreadsheet);
+    return (remembered && spreadsheet.tabs.find(tab => tab.gid === remembered.gid)) || null;
+}
+
+// Asks which tab holds the data (one row per item, column names in the first row).
+function chooseTab(spreadsheet, query) {
+    const tabs = spreadsheet.tabs.map(tab => ({
+        label: tab.title,
+        run: () => openTab(spreadsheet, tab, { ...query, g: tab.gid, t: tab.title })
+    }));
+    showMessage(t('chooseTabTitle'), [t('chooseTabText', { sheet: spreadsheet.title }), t('chooseTabLater')],
+        [...tabs, { label: `← ${t('openAnother')}`, run: showStart, ghost: true }], 'tabs');
+}
+
+function switchTab(gid) {
+    const tab = state.spreadsheet.tabs.find(x => String(x.gid) === String(gid));
+    if (tab) openTab(state.spreadsheet, tab, { ...state.query, g: tab.gid, t: tab.title });
 }
 
 async function openTab(spreadsheet, tab, query, note = '') {
@@ -268,7 +288,7 @@ function renderTopbar() {
 
 function renderAll() {
     const ctx = state.builderCtx || {};
-    Object.assign(ctx, { query: state.query, table: state.table, onChange: onQueryChange });
+    Object.assign(ctx, { query: state.query, table: state.table, onChange: onQueryChange, tabs: state.spreadsheet.tabs, tab: state.tab, onTab: switchTab });
     state.builderCtx = ctx;
     state.result = runQuery(state.query, state.table);
     ctx.visible = state.result.visible;
@@ -465,10 +485,7 @@ function bindTopbar() {
     document.addEventListener('click', e => {
         if (!e.target.closest('.menu-wrap')) $('#savedMenu').classList.add('hidden');
     });
-    $('#tabSelect').addEventListener('change', e => {
-        const tab = state.spreadsheet.tabs.find(x => String(x.gid) === e.target.value);
-        if (tab) openTab(state.spreadsheet, tab, { ...state.query, g: tab.gid, t: tab.title });
-    });
+    $('#tabSelect').addEventListener('change', e => switchTab(e.target.value));
     const lang = $('#languageSelect');
     lang.replaceChildren(...LANGUAGES.map(l => option(l.code, l.label, l.code === getLanguage())));
     lang.addEventListener('change', () => {

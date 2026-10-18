@@ -14,6 +14,7 @@ const CHECKLIST_SEARCH_FROM = 10;
 export function renderBuilder(root, ctx) {
     const { query } = ctx;
     root.replaceChildren(
+        tabLine(ctx),
         el('div', { class: 'match-line' },
             el('span', {}, t('matchPrefix')),
             opSelect(query.q, ctx),
@@ -25,6 +26,16 @@ export function renderBuilder(root, ctx) {
         renderSort(ctx),
         renderColumns(ctx)
     );
+}
+
+// Which tab of the spreadsheet is the data (switching keeps the filters; ones that don't fit get warnings).
+function tabLine(ctx) {
+    const select = el('select', { class: 'tab-select', 'aria-label': t('dataTab') },
+        (ctx.tabs || []).map(tab => option(String(tab.gid), tab.title, tab.gid === ctx.tab?.gid)));
+    select.addEventListener('change', () => ctx.onTab(select.value));
+    return el('div', { class: 'tab-line' },
+        el('label', {}, t('dataTab'), select),
+        el('span', { class: 'muted small' }, t('dataTabRows', { n: ctx.table.text.length, cols: ctx.table.headers.length })));
 }
 
 function opSelect(group, ctx, nested = false) {

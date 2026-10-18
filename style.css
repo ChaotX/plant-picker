@@ -391,6 +391,43 @@ h3 {
 
 /* ---- Builder ---- */
 
+.tab-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.tab-line label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.tab-select {
+    font-weight: 600;
+    max-width: 100%;
+}
+
+.message[data-kind="tabs"] {
+    border-left-color: var(--green);
+}
+
+.message[data-kind="tabs"] .actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.message[data-kind="tabs"] .actions .btn {
+    justify-content: flex-start;
+    white-space: normal;
+    text-align: left;
+}
+
 .match-line {
     display: flex;
     align-items: center;

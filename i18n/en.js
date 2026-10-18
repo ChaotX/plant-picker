@@ -64,6 +64,11 @@ export default {
     err_shortMissingTitle: 'Saved filter not found',
     err_shortMissingText: 'There is no saved filter “{id}” in your links spreadsheet. It may have been deleted, or it was saved by another Google account.',
     tabFoundByTitle: 'The tab was found by its name “{tab}”.',
+    chooseTabTitle: 'Which tab holds the data?',
+    chooseTabText: '“{sheet}” has several tabs. Choose the one with one item per row and the column names in the first row.',
+    chooseTabLater: 'It is remembered for this spreadsheet and saved in links; you can switch it any time above the filters.',
+    dataTab: 'Data from tab',
+    dataTabRows: '{n} rows, {cols} columns',
     columnWord: 'Column',
 
     // Builder

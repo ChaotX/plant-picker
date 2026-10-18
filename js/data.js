@@ -122,8 +122,3 @@ export async function loadTab(id, tab) {
         token: fromApi('token')
     });
 }
-
-// The largest tab is most likely the data; the public way doesn't know sizes, so it is the first tab there.
-export function largestTab(spreadsheet) {
-    return [...spreadsheet.tabs].sort((a, b) => b.rows * b.cols - a.rows * a.cols || a.index - b.index)[0];
-}

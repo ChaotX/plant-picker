@@ -64,6 +64,11 @@ export default {
     err_shortMissingTitle: 'A mentett szűrő nem található',
     err_shortMissingText: 'A linkeket tároló táblázatban nincs „{id}” szűrő. Lehet, hogy törölték, vagy másik Google-fiókkal mentették.',
     tabFoundByTitle: 'A munkalapot a neve („{tab}”) alapján találtam meg.',
+    chooseTabTitle: 'Melyik munkalapon vannak az adatok?',
+    chooseTabText: 'A(z) „{sheet}” táblázatnak több munkalapja van. Válaszd azt, amelyben soronként egy tétel van, és az első sorban az oszlopnevek.',
+    chooseTabLater: 'Ezt a táblázathoz megjegyzem, és a linkekbe is bekerül; a szűrők fölött bármikor átválthatod.',
+    dataTab: 'Adatok munkalapja',
+    dataTabRows: '{n} sor, {cols} oszlop',
     columnWord: 'Oszlop',
 
     // Builder
