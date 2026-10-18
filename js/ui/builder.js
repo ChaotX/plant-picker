@@ -1,0 +1,461 @@
+// The filter builder: one card per filter or group, plus sort keys and the visible-columns chooser.
+// ctx: { query, table, onChange(structural) } — structural changes re-render the builder, value edits only rerun
+// the query (so typing keeps focus).
+
+import { t } from '../i18n.js';
+import { filterKindsFor, fold, parseNumber } from '../profile.js';
+import { findColumn, isGroup, newFilter, nodeAt, parentOf, walk } from '../query.js';
+import { el, option } from './dom.js';
+import { debounce } from '../util.js';
+
+const KIND_ICON = { flag: '◐', range: '↔', enum: '☰', list: '⋯', text: 'T' };
+const CHECKLIST_SEARCH_FROM = 10;
+
+export function renderBuilder(root, ctx) {
+    const { query } = ctx;
+    root.replaceChildren(
+        el('div', { class: 'match-line' },
+            el('span', {}, t('matchPrefix')),
+            opSelect(query.q, ctx),
+            el('span', {}, t('matchSuffix'))),
+        el('div', { class: 'filter-list' }, query.q.items.map((node, i) => renderNode(node, String(i), ctx))),
+        el('div', { class: 'add-row' },
+            el('button', { class: 'btn primary', onclick: () => addFilter(query.q, ctx) }, `+ ${t('addFilter')}`),
+            el('button', { class: 'btn ghost', onclick: () => addGroup(ctx), title: t('addGroupHint') }, `+ ${t('addGroup')}`)),
+        renderSort(ctx),
+        renderColumns(ctx)
+    );
+}
+
+function opSelect(group, ctx, nested = false) {
+    const select = el('select', { class: 'op-select', 'aria-label': t('matchOp') },
+        option('and', nested ? t('groupAll') : t('opAll'), group.op !== 'or'),
+        option('or', nested ? t('groupAny') : t('opAny'), group.op === 'or'));
+    select.addEventListener('change', () => {
+        group.op = select.value;
+        ctx.onChange(true);
+    });
+    return select;
+}
+
+function columnLabel(ctx, index) {
+    const p = ctx.table.profiles[index];
+    return `${ctx.table.headers[index]}  ${KIND_ICON[p.kind] || ''}`;
+}
+
+function defaultColumn(ctx) {
+    const used = new Set();
+    walk(ctx.query.q, node => {
+        if (!isGroup(node)) used.add(node.c);
+    });
+    // Prefer columns with a ready-made filter (a list of values, a range, a flag) that aren't in use yet.
+    const free = ctx.table.headers.findIndex((h, i) => !used.has(h) && ctx.table.profiles[i].kind !== 'text');
+    return ctx.table.headers[free >= 0 ? free : 0];
+}
+
+function filterFor(ctx, column) {
+    const col = findColumn(ctx.table.headers, column);
+    const kind = col.index >= 0 ? filterKindsFor(ctx.table.profiles[col.index])[0] : 'text';
+    return { ...newFilter(col.index >= 0 ? col.header : column, kind), not: false };
+}
+
+function addFilter(group, ctx) {
+    group.items.push(filterFor(ctx, defaultColumn(ctx)));
+    ctx.focusLast = true;
+    ctx.onChange(true);
+}
+
+function addGroup(ctx) {
+    const op = ctx.query.q.op === 'or' ? 'and' : 'or';
+    ctx.query.q.items.push({ op, items: [filterFor(ctx, defaultColumn(ctx))] });
+    ctx.onChange(true);
+}
+
+function removeNode(ctx, path) {
+    const { parent, index } = parentOf(ctx.query, path);
+    parent.items.splice(index, 1);
+    // A group left empty goes too.
+    if (!parent.items.length && parent !== ctx.query.q) {
+        const up = parentOf(ctx.query, path.split('.').slice(0, -1).join('.'));
+        up.parent.items.splice(up.index, 1);
+    }
+    ctx.onChange(true);
+}
+
+function excludeToggle(node, ctx) {
+    const input = el('input', { type: 'checkbox', checked: Boolean(node.not) });
+    input.addEventListener('change', () => {
+        node.not = input.checked;
+        input.closest('.card')?.classList.toggle('excluded', node.not);
+        ctx.onChange(false);
+    });
+    return el('label', { class: 'exclude', title: t('excludeHint') }, input, t('exclude'));
+}
+
+function renderNode(node, path, ctx) {
+    return isGroup(node) ? renderGroup(node, path, ctx) : renderFilter(node, path, ctx);
+}
+
+function renderGroup(group, path, ctx) {
+    return el('div', { class: `card group${group.not ? ' excluded' : ''}`, dataset: { path } },
+        el('div', { class: 'card-head' },
+            el('span', { class: 'group-label' }, t('groupPrefix')),
+            opSelect(group, ctx, true),
+            el('span', { class: 'spacer' }),
+            excludeToggle(group, ctx),
+            el('span', { class: 'badge', title: t('badgeHint') }),
+            el('button', { class: 'icon', title: t('remove'), onclick: () => removeNode(ctx, path) }, '✕')),
+        el('div', { class: 'filter-list' }, group.items.map((child, i) => renderFilter(child, `${path}.${i}`, ctx))),
+        el('div', { class: 'add-row' }, el('button', { class: 'btn small ghost', onclick: () => addFilter(group, ctx) }, `+ ${t('addFilterToGroup')}`)),
+        el('div', { class: 'issues' }));
+}
+
+function renderFilter(filter, path, ctx) {
+    const { table } = ctx;
+    const col = findColumn(table.headers, filter.c);
+    const colSelect = el('select', { class: 'col-select', 'aria-label': t('column') },
+        col.index < 0 ? option(filter.c, `⚠ ${filter.c} (${t('missing')})`, true) : null,
+        table.headers.map((h, i) => option(h, columnLabel(ctx, i), i === col.index)));
+    colSelect.addEventListener('change', () => {
+        const fresh = filterFor(ctx, colSelect.value);
+        replaceNode(ctx, path, { ...fresh, not: filter.not });
+    });
+
+    const kinds = col.index >= 0 ? filterKindsFor(table.profiles[col.index]) : [filter.k];
+    if (!kinds.includes(filter.k)) kinds.push(filter.k);
+    const kindSelect = el('select', { class: 'kind-select', 'aria-label': t('filterType') },
+        kinds.map(k => option(k, t(`kind_${k}`), k === filter.k)));
+    kindSelect.addEventListener('change', () => {
+        replaceNode(ctx, path, { ...newFilter(filter.c, kindSelect.value), not: filter.not });
+    });
+
+    const card = el('div', { class: `card filter${filter.not ? ' excluded' : ''}`, dataset: { path } },
+        el('div', { class: 'card-head' },
+            colSelect,
+            kindSelect,
+            el('span', { class: 'spacer' }),
+            excludeToggle(filter, ctx),
+            el('span', { class: 'badge', title: t('badgeHint') }),
+            el('button', { class: 'icon', title: t('remove'), onclick: () => removeNode(ctx, path) }, '✕')),
+        el('div', { class: 'card-body' }, col.index >= 0 ? renderEditor(filter, table.profiles[col.index], ctx) : null),
+        el('div', { class: 'issues' }));
+    if (ctx.focusLast) queueMicrotask(() => {
+        if (!ctx.focusLast) return;
+        ctx.focusLast = false;
+        const last = [...document.querySelectorAll('.col-select')].pop();
+        last?.focus();
+    });
+    return card;
+}
+
+function replaceNode(ctx, path, node) {
+    const { parent, index } = parentOf(ctx.query, path);
+    parent.items[index] = node;
+    ctx.onChange(true);
+}
+
+// ---------- editors ----------
+
+function renderEditor(filter, profile, ctx) {
+    switch (filter.k) {
+        case 'in': return inEditor(filter, profile, ctx);
+        case 'has': return hasEditor(filter, profile, ctx);
+        case 'range': return rangeEditor(filter, profile, ctx);
+        case 'flag': return flagEditor(filter, ctx);
+        default: return textEditor(filter, ctx);
+    }
+}
+
+function inEditor(filter, profile, ctx) {
+    const parts = profile.parts
+        ? (() => {
+            const input = el('input', { type: 'checkbox', checked: Boolean(filter.parts) });
+            input.addEventListener('change', () => {
+                filter.parts = input.checked;
+                ctx.onChange(true);
+            });
+            return el('label', { class: 'check hint-check', title: t('partsHint') }, input, t('parts'));
+        })()
+        : null;
+    const pool = filter.parts && profile.parts ? profile.parts : profile.values;
+    return el('div', {}, parts, checklist(filter, pool, ctx));
+}
+
+function hasEditor(filter, profile, ctx) {
+    const mode = el('select', { class: 'small-select' },
+        option('any', t('hasAny'), !filter.all),
+        option('all', t('hasAll'), Boolean(filter.all)));
+    mode.addEventListener('change', () => {
+        filter.all = mode.value === 'all';
+        ctx.onChange(false);
+    });
+    return el('div', {}, el('div', { class: 'inline' }, el('span', {}, t('hasPrefix')), mode), checklist(filter, profile.tokens || profile.values, ctx));
+}
+
+// Checkboxes for the values of a column (with counts); chosen values first, values gone from the sheet flagged.
+function checklist(filter, pool, ctx) {
+    const chosen = new Set(filter.v.map(fold));
+    const known = new Set(pool.map(v => fold(v.value)));
+    const items = [
+        ...filter.v.filter(v => !known.has(fold(v))).map(v => ({ value: v, count: 0, gone: true })),
+        ...pool.filter(v => chosen.has(fold(v.value))),
+        ...pool.filter(v => !chosen.has(fold(v.value)))
+    ];
+    const box = el('div', { class: 'checklist' });
+    const summary = el('span', { class: 'muted small' });
+    const updateSummary = () => {
+        summary.textContent = filter.v.length ? t('chosenCount', { n: filter.v.length }) : t('noneChosen');
+    };
+    for (const item of items) {
+        const input = el('input', { type: 'checkbox', checked: chosen.has(fold(item.value)) });
+        input.addEventListener('change', () => {
+            const key = fold(item.value);
+            filter.v = filter.v.filter(v => fold(v) !== key);
+            if (input.checked) filter.v.push(item.value);
+            updateSummary();
+            ctx.onChange(false);
+        });
+        box.append(el('label', { class: `check${item.gone ? ' gone' : ''}`, title: item.gone ? t('valueGone') : '' },
+            input,
+            el('span', { class: 'value' }, item.value),
+            el('span', { class: 'count' }, item.gone ? '⚠' : item.count)));
+    }
+    let search = null;
+    if (items.length >= CHECKLIST_SEARCH_FROM) {
+        search = el('input', { type: 'search', class: 'checklist-search', placeholder: t('searchValues') });
+        search.addEventListener('input', () => {
+            const q = fold(search.value);
+            for (const label of box.children) label.classList.toggle('hidden', Boolean(q) && !fold(label.textContent).includes(q));
+        });
+    }
+    const clear = el('button', {
+        class: 'link-btn small',
+        onclick: () => {
+            filter.v = [];
+            ctx.onChange(true);
+        }
+    }, t('clear'));
+    updateSummary();
+    return el('div', { class: 'checklist-wrap' }, el('div', { class: 'inline' }, search, summary, clear), box);
+}
+
+function numberInput(value, placeholder, onValue) {
+    const input = el('input', { type: 'text', inputmode: 'decimal', class: 'num', placeholder, value: value ?? '' });
+    input.addEventListener('input', () => {
+        const s = input.value.trim();
+        const n = s === '' ? null : parseNumber(s);
+        input.classList.toggle('invalid', s !== '' && n === null);
+        if (s === '' || n !== null) onValue(n);
+    });
+    return input;
+}
+
+function fmtNumber(n) {
+    return n === null || n === undefined ? '' : String(Math.round(n * 1000) / 1000).replace('.', ',');
+}
+
+function rangeEditor(filter, profile, ctx) {
+    const changed = debounce(() => ctx.onChange(false), 200);
+    const how = el('select', { class: 'small-select', title: t('rangeHowHint') },
+        option('overlap', t('rangeOverlap'), filter.how !== 'within'),
+        option('within', t('rangeWithin'), filter.how === 'within'));
+    how.addEventListener('change', () => {
+        filter.how = how.value;
+        ctx.onChange(false);
+    });
+    return el('div', {},
+        el('div', { class: 'inline' },
+            el('span', {}, t('rangeFrom')),
+            numberInput(filter.min, fmtNumber(profile.min), n => {
+                filter.min = n;
+                changed();
+            }),
+            el('span', {}, t('rangeTo')),
+            numberInput(filter.max, fmtNumber(profile.max), n => {
+                filter.max = n;
+                changed();
+            }),
+            how),
+        profile.min !== null ? el('div', { class: 'muted small' }, t('rangeSpan', { min: fmtNumber(profile.min), max: fmtNumber(profile.max) })) : null);
+}
+
+function flagEditor(filter, ctx) {
+    const select = el('select', {},
+        option('set', t('flagSet'), filter.set !== false),
+        option('empty', t('flagEmpty'), filter.set === false));
+    select.addEventListener('change', () => {
+        filter.set = select.value === 'set';
+        ctx.onChange(false);
+    });
+    return el('div', { class: 'inline' }, select);
+}
+
+function textEditor(filter, ctx) {
+    const changed = debounce(() => ctx.onChange(false), 200);
+    const mode = el('select', { class: 'small-select' },
+        ['contains', 'equals', 'wildcard', 'regex'].map(m => option(m, t(`text_${m}`), (filter.m || 'contains') === m)));
+    const input = el('input', { type: 'text', class: 'pattern', value: filter.x || '', placeholder: t(`textPlaceholder_${filter.m || 'contains'}`) });
+    const hint = el('div', { class: 'muted small' }, t(`textHint_${filter.m || 'contains'}`));
+    mode.addEventListener('change', () => {
+        filter.m = mode.value;
+        input.placeholder = t(`textPlaceholder_${filter.m}`);
+        hint.textContent = t(`textHint_${filter.m}`);
+        ctx.onChange(false);
+    });
+    input.addEventListener('input', () => {
+        filter.x = input.value;
+        changed();
+    });
+    const cs = el('input', { type: 'checkbox', checked: Boolean(filter.cs) });
+    cs.addEventListener('change', () => {
+        filter.cs = cs.checked;
+        ctx.onChange(false);
+    });
+    return el('div', {}, el('div', { class: 'inline' }, mode, input, el('label', { class: 'check' }, cs, t('caseSensitive'))), hint);
+}
+
+// ---------- sort and columns ----------
+
+function renderSort(ctx) {
+    const { query, table } = ctx;
+    const rows = query.o.map((key, i) => {
+        const col = findColumn(table.headers, key.c);
+        const numeric = col.index >= 0 && table.profiles[col.index].kind === 'range';
+        const colSelect = el('select', { class: 'col-select' },
+            col.index < 0 ? option(key.c, `⚠ ${key.c} (${t('missing')})`, true) : null,
+            table.headers.map((h, j) => option(h, h, j === col.index)));
+        colSelect.addEventListener('change', () => {
+            key.c = colSelect.value;
+            ctx.onChange(true);
+        });
+        const dir = el('select', { class: 'small-select' },
+            option('asc', numeric ? t('sortAscNum') : t('sortAsc'), key.d !== 'desc'),
+            option('desc', numeric ? t('sortDescNum') : t('sortDesc'), key.d === 'desc'));
+        dir.addEventListener('change', () => {
+            key.d = dir.value;
+            ctx.onChange(false);
+        });
+        let by = null;
+        if (numeric) {
+            by = el('select', { class: 'small-select', title: t('sortByHint') },
+                option('min', t('sortByMin'), key.by !== 'max'),
+                option('max', t('sortByMax'), key.by === 'max'));
+            by.addEventListener('change', () => {
+                key.by = by.value;
+                ctx.onChange(false);
+            });
+        }
+        const move = delta => {
+            const j = i + delta;
+            if (j < 0 || j >= query.o.length) return;
+            [query.o[i], query.o[j]] = [query.o[j], query.o[i]];
+            ctx.onChange(true);
+        };
+        return el('div', { class: 'sort-row', dataset: { sort: i } },
+            el('span', { class: 'muted' }, i === 0 ? t('sortFirst') : t('sortThen')),
+            colSelect, dir, by,
+            el('button', { class: 'icon', title: t('moveUp'), disabled: i === 0, onclick: () => move(-1) }, '↑'),
+            el('button', { class: 'icon', title: t('moveDown'), disabled: i === query.o.length - 1, onclick: () => move(1) }, '↓'),
+            el('button', {
+                class: 'icon',
+                title: t('remove'),
+                onclick: () => {
+                    query.o.splice(i, 1);
+                    ctx.onChange(true);
+                }
+            }, '✕'));
+    });
+    const add = el('button', {
+        class: 'btn small ghost',
+        onclick: () => {
+            const used = new Set(query.o.map(o => o.c));
+            const c = table.headers.find(h => !used.has(h)) || table.headers[0];
+            query.o.push({ c, d: 'asc', by: 'min' });
+            ctx.onChange(true);
+        }
+    }, `+ ${t('addSort')}`);
+    return el('div', { class: 'section sort-section' }, el('h3', {}, t('sortTitle')), rows, add);
+}
+
+function renderColumns(ctx) {
+    const { query, table } = ctx;
+    const auto = !query.cols;
+    const visible = new Set(ctx.visible || []);
+    const autoInput = el('input', { type: 'checkbox', checked: auto });
+    autoInput.addEventListener('change', () => {
+        query.cols = autoInput.checked ? null : table.headers.filter((_, i) => visible.has(i));
+        ctx.onChange(true);
+    });
+    const boxes = table.headers.map((h, i) => {
+        const input = el('input', { type: 'checkbox', checked: visible.has(i), disabled: auto });
+        input.addEventListener('change', () => {
+            const current = query.cols ? [...query.cols] : table.headers.filter((_, j) => visible.has(j));
+            const next = input.checked ? [...current, h] : current.filter(c => c !== h);
+            // Keep the sheet's column order.
+            query.cols = table.headers.filter(x => next.includes(x));
+            ctx.onChange(true);
+        });
+        return el('label', { class: 'check' }, input, h);
+    });
+    const details = el('details', { class: 'section columns-section', open: Boolean(ctx.columnsOpen) },
+        el('summary', {}, t('columnsTitle', { n: visible.size, total: table.headers.length })),
+        el('label', { class: 'check' }, autoInput, t('columnsAuto')),
+        el('div', { class: 'columns-grid' }, boxes));
+    details.addEventListener('toggle', () => {
+        ctx.columnsOpen = details.open;
+    });
+    return details;
+}
+
+// ---------- badges and issues (updated after every run, without re-rendering) ----------
+
+export function issueText(issue) {
+    return t(`issue_${issue.code}`, issue.params);
+}
+
+export function updateBuilder(root, ctx, result) {
+    for (const card of root.querySelectorAll('.card[data-path]')) {
+        const path = card.dataset.path;
+        const badge = card.querySelector(':scope > .card-head > .badge');
+        const count = result.counts.get(path);
+        if (badge) {
+            badge.textContent = count ? t('badge', { n: count.alone }) : '';
+            badge.classList.toggle('zero', Boolean(count) && count.alone === 0);
+        }
+        const issues = (result.issues.get(path) || []).filter(i => i.level !== 'info');
+        const box = card.querySelector(':scope > .issues');
+        card.classList.toggle('skipped', issues.some(i => i.level === 'skip'));
+        card.classList.toggle('warned', issues.some(i => i.level === 'warn'));
+        if (!box) continue;
+        box.replaceChildren(...issues.map(issue => el('div', { class: `issue ${issue.level}` },
+            issue.level === 'skip' ? '⛔ ' : '⚠ ',
+            issueText(issue),
+            issue.params.suggestion
+                ? el('button', {
+                    class: 'link-btn',
+                    onclick: () => {
+                        const node = nodeAt(ctx.query, path);
+                        node.c = issue.params.suggestion;
+                        ctx.onChange(true);
+                    }
+                }, t('useColumn', { column: issue.params.suggestion }))
+                : null)));
+    }
+}
+
+// Short human description of a top-level node, for the "no results" help.
+export function describeNode(node) {
+    if (isGroup(node)) {
+        const inner = node.items.map(describeNode).join(node.op === 'or' ? ` ${t('or')} ` : ` ${t('and')} `);
+        return `${node.not ? `${t('not')} ` : ''}(${inner})`;
+    }
+    let what;
+    switch (node.k) {
+        case 'in':
+        case 'has': what = `${t(`kind_${node.k}`)} ${node.v.join(', ') || '…'}`; break;
+        case 'range': what = `${t('kind_range')} ${fmtNumber(node.min) || '…'}–${fmtNumber(node.max) || '…'}`; break;
+        case 'flag': what = node.set === false ? t('flagEmpty') : t('flagSet'); break;
+        default: what = `${t(`text_${node.m || 'contains'}`)} “${node.x || ''}”`;
+    }
+    return `${node.not ? `${t('not')} ` : ''}${node.c}: ${what}`;
+}

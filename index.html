@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>plant-picker</title>
+    <meta name="description" content="Filter and sort a Google Sheet of plants, and keep the result as a link.">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="./" title="plant-picker"><img src="favicon.svg" alt="" width="26" height="26"><span>plant-picker</span></a>
+        <div id="sheetInfo" class="sheet-info hidden">
+            <a id="sheetLink" target="_blank" rel="noopener" data-i18n-title="openInSheets"></a>
+            <select id="tabSelect" data-i18n-title="tab"></select>
+        </div>
+        <span class="spacer"></span>
+        <button id="reloadButton" class="top-btn hidden" data-i18n-title="reloadHint">⟳</button>
+        <button id="changeSheetButton" class="top-btn hidden" data-i18n="changeSheet"></button>
+        <div class="menu-wrap">
+            <button id="savedButton" class="top-btn" data-i18n="saved"></button>
+            <div id="savedMenu" class="menu hidden"></div>
+        </div>
+        <button id="accountButton" class="top-btn"></button>
+        <select id="languageSelect" class="top-select" aria-label="Language"></select>
+    </header>
+
+    <main>
+        <section id="startScreen" class="screen hidden"></section>
+
+        <section id="loadingScreen" class="screen hidden">
+            <div class="loading"><div class="spinner"></div><p id="loadingText"></p></div>
+        </section>
+
+        <section id="messageScreen" class="screen hidden">
+            <div id="messageBox" class="card message">
+                <h2 id="messageTitle"></h2>
+                <div id="messageText"></div>
+                <div id="messageActions" class="actions"></div>
+            </div>
+        </section>
+
+        <section id="mainScreen" class="screen hidden">
+            <div id="builder" class="card builder"></div>
+            <div id="shareBar" class="share-bar"></div>
+            <div id="results" class="results-area"></div>
+        </section>
+    </main>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
