@@ -78,6 +78,27 @@ export function expand(data) {
     };
 }
 
+function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])]));
+    }
+    return value;
+}
+
+// A comparison key: equal for queries that filter, sort and show the same, however they were built (key order,
+// order of chosen values). withName false: ignore the name too.
+export function queryKey(query, { withName = true } = {}) {
+    const c = compact(query);
+    if (!withName) delete c.n;
+    const sortValues = node => {
+        if (Array.isArray(node.items)) node.items.forEach(sortValues);
+        else if (Array.isArray(node.v)) node.v = [...node.v].sort();
+    };
+    sortValues(c.q);
+    return JSON.stringify(canonical(c));
+}
+
 export async function encodeQuery(query) {
     const json = new TextEncoder().encode(JSON.stringify(compact(query)));
     if (typeof CompressionStream === 'function') {

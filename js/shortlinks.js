@@ -4,6 +4,7 @@
 // the saved filters point to. Needs a signed-in user.
 
 import { appendRows, createSpreadsheet, findFiles, getValues, HttpError, quoteSheet, updateValues } from './sheets-api.js';
+import { decodeQuery, queryKey } from './codec.js';
 import { storage } from './util.js';
 
 export const LINKS_TITLE = 'plant-picker links';
@@ -77,6 +78,34 @@ export async function listLinks() {
 export async function resolveLink(id) {
     const { links } = await readLinks();
     return links.find(l => l.id === id) || null;
+}
+
+const decoded = new Map(); // stored query text → its comparison key (decoding is async; the texts don't change)
+
+// The saved link whose query filters, sorts and shows the same as this one (names ignored), or null. When
+// several do, the one with the same name, else the latest. → { link, key } with key = the saved query's full key.
+export async function findSavedLink(query) {
+    return matchLinks(query, await listLinks());
+}
+
+// The matching part of findSavedLink, for given link rows ({ id, name, query }).
+export async function matchLinks(query, links) {
+    const wanted = queryKey(query, { withName: false });
+    const matches = [];
+    for (const link of links) {
+        if (!decoded.has(link.query)) {
+            try {
+                const saved = await decodeQuery(link.query);
+                decoded.set(link.query, { loose: queryKey(saved, { withName: false }), full: queryKey(saved), name: saved.n || link.name });
+            } catch {
+                decoded.set(link.query, null); // a row edited by hand into something unreadable
+            }
+        }
+        const d = decoded.get(link.query);
+        if (d && d.loose === wanted) matches.push({ link, key: d.full, name: d.name });
+    }
+    if (!matches.length) return null;
+    return matches.find(m => m.name === (query.n || '')) || matches[matches.length - 1];
 }
 
 // Saves a new link and returns its id.

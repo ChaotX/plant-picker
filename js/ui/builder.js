@@ -42,7 +42,8 @@ function renderHead(root, ctx) {
         setCollapsed(root, ctx, false);
         if (chip) root.querySelector(`.card[data-path="${chip.dataset.goto}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
-    return el('div', { class: 'builder-head' }, el('div', { class: 'builder-title' }, toggle, name), summary);
+    const fresh = el('button', { class: 'btn small ghost', title: t('newQueryHint'), onclick: () => ctx.onNew() }, `＋ ${t('newQuery')}`);
+    return el('div', { class: 'builder-head' }, el('div', { class: 'builder-title' }, toggle, name, fresh), summary);
 }
 
 function renderBody(ctx) {

@@ -1008,3 +1008,7 @@ table.results dd {
         margin-bottom: 4px;
     }
 }
+
+.builder-title .btn {
+    flex: none;
+}

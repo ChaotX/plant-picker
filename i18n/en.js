@@ -72,6 +72,10 @@ export default {
     columnWord: 'Column',
 
     // Builder
+    newQuery: 'New filter',
+    newQueryHint: 'Start an empty filter on this tab (the browser’s Back button brings the current one back)',
+    newQueryToast: 'New, empty filter. The previous one: browser Back button.',
+    alreadySaved: 'This filter is already saved as {id}; its short link is copied.',
     namePlaceholder: 'Untitled filter — click to name it',
     nameLabel: 'Name of this filter',
     expandFilters: 'Show the filters',

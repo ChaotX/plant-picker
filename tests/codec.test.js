@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compact, decodeQuery, encodeQuery, expand } from '../js/codec.js';
+import { compact, decodeQuery, encodeQuery, expand, queryKey } from '../js/codec.js';
 import { emptyQuery, newFilter } from '../js/query.js';
 
 const sample = {
@@ -32,6 +32,20 @@ test('round trip keeps the query', async () => {
 test('links stay reasonably short', async () => {
     const code = await encodeQuery(sample);
     assert.ok(code.length < 600, `length ${code.length}`);
+});
+
+test('comparison key ignores how the query was built, and the name on request', async () => {
+    const back = await decodeQuery(await encodeQuery(sample));
+    assert.equal(queryKey(back), queryKey(sample));
+    const reordered = structuredClone(sample);
+    reordered.q.items[0] = { not: false, v: ['Örökzöld cserje', 'Lombhullató cserje'], k: 'in', c: 'Típus' };
+    assert.equal(queryKey(reordered), queryKey(sample));
+    const renamed = { ...sample, n: 'Más név' };
+    assert.notEqual(queryKey(renamed), queryKey(sample));
+    assert.equal(queryKey(renamed, { withName: false }), queryKey(sample, { withName: false }));
+    const changed = structuredClone(sample);
+    changed.q.items[2].not = false;
+    assert.notEqual(queryKey(changed, { withName: false }), queryKey(sample, { withName: false }));
 });
 
 test('plain JSON format decodes too', async () => {

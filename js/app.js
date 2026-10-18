@@ -2,14 +2,14 @@
 // a link. ?q=<encoded query> is self-contained; ?l=<id> is a short link stored in the user's own Drive.
 
 import { EXAMPLE_SHEET } from './config.js';
-import { encodeQuery, decodeQuery } from './codec.js';
+import { encodeQuery, decodeQuery, queryKey } from './codec.js';
 import { LoadError, findTab, loadSpreadsheet, loadTab } from './data.js';
 import { hasSignedInBefore, hasValidToken, isConfigured, requestToken, signOut } from './google-auth.js';
 import { applyTranslations, getLanguage, LANGUAGES, setLanguage, t } from './i18n.js';
 import { pickSpreadsheet, spreadsheetIdFromUrl } from './picker.js';
 import { buildTable } from './profile.js';
 import { emptyQuery, runQuery } from './query.js';
-import { createLink, isShortId, linksSheetUrl, listLinks, resolveLink, updateLink } from './shortlinks.js';
+import { createLink, findSavedLink, isShortId, linksSheetUrl, listLinks, resolveLink, updateLink } from './shortlinks.js';
 import { renderBuilder, updateBuilder } from './ui/builder.js';
 import { $, el, option } from './ui/dom.js';
 import { renderResults } from './ui/results.js';
@@ -25,7 +25,8 @@ const state = {
     query: null,
     result: null,
     code: '',            // the encoded current query
-    short: null,         // { id, name, query } when opened from / saved as a short link
+    key: '',             // its comparison key (queryKey)
+    short: null,         // { id, name, key } when opened from / saved as / matching a short link
     view: { shown: 0, expanded: new Set() },
     builderCtx: null
 };
@@ -183,6 +184,18 @@ function chooseTab(spreadsheet, query) {
         [...tabs, { label: `← ${t('openAnother')}`, run: showStart, ghost: true }], 'tabs');
 }
 
+// Starts an empty query on the same spreadsheet and tab. The previous one stays in the browser history: Back
+// brings it back (a popstate reloads the page from its address).
+function newQuery() {
+    history.pushState(null, '', location.href);
+    state.short = null;
+    state.query = emptyQuery(state.spreadsheet.id, state.tab.gid, state.tab.title);
+    state.builderCtx = { collapsed: false };
+    state.view = { shown: 0, expanded: new Set() };
+    renderAll();
+    toast(t('newQueryToast'));
+}
+
 function switchTab(gid) {
     const tab = state.spreadsheet.tabs.find(x => String(x.gid) === String(gid));
     if (tab) openTab(state.spreadsheet, tab, { ...state.query, g: tab.gid, t: tab.title });
@@ -207,6 +220,22 @@ async function openTab(spreadsheet, tab, query, note = '') {
     showScreen('mainScreen');
     renderAll();
     if (note) toast(note, 'warn');
+    matchSavedLink();
+}
+
+// Signed in and not on a short link: if this query is already saved (e.g. opened from its long link), show it as
+// that short link, so saving again doesn't make a duplicate. Silent: never asks to sign in.
+async function matchSavedLink() {
+    if (state.short || !isConfigured() || !hasValidToken()) return;
+    try {
+        const match = await findSavedLink(state.query);
+        if (match && !state.short) {
+            state.short = { id: match.link.id, name: match.name, key: match.key };
+            syncUrl();
+        }
+    } catch {
+        // no links sheet yet, or offline: nothing to show
+    }
 }
 
 function handleLoadError(error, query, retry) {
@@ -291,7 +320,7 @@ function renderTopbar() {
 
 function renderAll() {
     const ctx = state.builderCtx || {};
-    Object.assign(ctx, { query: state.query, table: state.table, onChange: onQueryChange, tabs: state.spreadsheet.tabs, tab: state.tab, onTab: switchTab });
+    Object.assign(ctx, { query: state.query, table: state.table, onChange: onQueryChange, tabs: state.spreadsheet.tabs, tab: state.tab, onTab: switchTab, onNew: newQuery });
     state.builderCtx = ctx;
     state.result = runQuery(state.query, state.table);
     ctx.visible = state.result.visible;
@@ -333,7 +362,8 @@ function onQueryChange(structural) {
 const syncUrl = debounce(async () => {
     if (!state.query) return;
     state.code = await encodeQuery(state.query);
-    const short = state.short && state.short.query === state.code;
+    state.key = queryKey(state.query);
+    const short = state.short && state.short.key === state.key;
     const search = short ? `?l=${state.short.id}` : `?q=${state.code}`;
     history.replaceState(null, '', `${location.pathname}${search}`);
     document.title = state.query.n ? `${state.query.n} – plant-picker` : 'plant-picker';
@@ -360,7 +390,7 @@ async function copy(text, message) {
 function renderShareBar() {
     const bar = $('#shareBar');
     const short = state.short;
-    const modified = short && short.query !== state.code;
+    const modified = short && short.key !== state.key;
     // The name is part of the query (edited at the top of the filter panel), so a rename also counts as a change.
     const save = async (asNew) => {
         try {
@@ -368,12 +398,19 @@ function renderShareBar() {
             const label = state.query.n || '';
             if (short && !asNew) {
                 await updateLink(short.id, state.code, label);
-                state.short = { ...short, name: label, query: state.code };
+                state.short = { ...short, name: label, key: state.key };
                 toast(t('linkUpdated', { id: short.id }));
             } else {
-                const id = await createLink(state.code, label);
-                state.short = { id, name: label, query: state.code };
-                await copy(shortLink(id), t('shortCopied', { id }));
+                // The same filter saved before (names aside) gets its existing link, not a duplicate.
+                const match = await findSavedLink(state.query);
+                if (match) {
+                    state.short = { id: match.link.id, name: match.name, key: match.key };
+                    await copy(shortLink(match.link.id), t('alreadySaved', { id: match.link.id }));
+                } else {
+                    const id = await createLink(state.code, label);
+                    state.short = { id, name: label, key: state.key };
+                    await copy(shortLink(id), t('shortCopied', { id }));
+                }
             }
             syncUrl();
         } catch (error) {
@@ -453,7 +490,7 @@ async function openShort(id) {
             }
             const query = await decodeQuery(link.query);
             query.n = query.n || link.name; // links saved before names were part of the query
-            await openQuery(query, { short: { id, name: query.n, query: link.query } });
+            await openQuery(query, { short: { id, name: query.n, key: queryKey(query) } });
         } catch (error) {
             showMessage(t('err_otherTitle'), error.message, [{ label: t('tryAgain'), run: resolve, primary: true }, { label: t('openAnother'), run: showStart }]);
         }
@@ -486,6 +523,7 @@ function bindTopbar() {
         if (!e.target.closest('.menu-wrap')) $('#savedMenu').classList.add('hidden');
     });
     $('#tabSelect').addEventListener('change', e => switchTab(e.target.value));
+    window.addEventListener('popstate', () => location.reload());
     const lang = $('#languageSelect');
     lang.replaceChildren(...LANGUAGES.map(l => option(l.code, l.label, l.code === getLanguage())));
     lang.addEventListener('change', () => {

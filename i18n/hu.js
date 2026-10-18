@@ -72,6 +72,10 @@ export default {
     columnWord: 'Oszlop',
 
     // Builder
+    newQuery: 'Új szűrő',
+    newQueryHint: 'Üres szűrő indítása ezen a munkalapon (a böngésző Vissza gombja visszahozza a mostanit)',
+    newQueryToast: 'Új, üres szűrő. Az előzőt a böngésző Vissza gombja hozza vissza.',
+    alreadySaved: 'Ez a szűrő már el van mentve ({id}); a rövid linkje kimásolva.',
     namePlaceholder: 'Névtelen szűrő – kattints az elnevezéshez',
     nameLabel: 'A szűrő neve',
     expandFilters: 'Szűrők megjelenítése',
