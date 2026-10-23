@@ -77,7 +77,7 @@ node tools/serve.mjs   # or: npm run serve (in PowerShell: npm.cmd run serve)
 node --test "tests/*.test.js"   # or: npm test — profiling, query, validation, link codec, CSV (Node ≥ 20)
 ```
 
-Open <http://localhost:8000> and **Open the example plant sheet**.
+Open <http://localhost:8000> and paste the link of a spreadsheet (or choose one from Google Drive).
 
 ## Google Cloud setup
 
@@ -122,7 +122,7 @@ js/shortlinks.js          the private 'plant-picker links' spreadsheet
 js/sheets-api.js, google-auth.js, picker.js, util.js, i18n.js   from PlanTape
 js/ui/builder.js, results.js, start.js, dom.js
 i18n/en.js, i18n/hu.js    UI strings (sheet content is never translated); language follows the system, switch kept
-tests/                    node --test suites; fixtures/plants-sample.js = 40 rows of the example sheet
+tests/                    node --test suites; fixtures/sample-plants.js = a small made-up plant table
 ```
 
 ## Ideas

@@ -8,7 +8,6 @@ export default {
     pickFromDrive: 'Choose from Google Drive',
     pickHint: 'Private spreadsheets: choose them once here, then their links work.',
     pickTitle: 'Choose a spreadsheet',
-    openExample: 'Open the example plant sheet',
     recentTitle: 'Recent spreadsheets',
     forget: 'Remove from the list',
     notConfigured: 'Google sign-in is not configured (js/config.js), so only publicly shared sheets can be opened.',

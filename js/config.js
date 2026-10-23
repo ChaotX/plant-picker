@@ -4,6 +4,3 @@
 export const GOOGLE_CLIENT_ID = '136817057087-26jlqfkmptubg04r16eph1pl630u10nd.apps.googleusercontent.com';
 export const GOOGLE_API_KEY = 'AIzaSyACuO7wMIbS_PCNqZm6Vqm5LYAKT-TNips';   // browser key: Drive Picker, and reading link-shared sheets without sign-in
 export const GOOGLE_APP_ID = '136817057087';    // Cloud project number, used by the Drive Picker
-
-// Offered on the start screen ("Open the example plant sheet"). Empty id: not offered.
-export const EXAMPLE_SHEET = { id: '', gid: 123456 };

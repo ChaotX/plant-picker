@@ -10,7 +10,7 @@ function gidFromUrl(text) {
     return m ? Number(m[1]) : null;
 }
 
-// options: { recent, example, configured, onOpen(id, gid), onPick() → { id } | null, onForget(id) }
+// options: { recent, configured, onOpen(id, gid), onPick() → { id } | null, onForget(id) }
 export function renderStart(root, options) {
     const input = el('input', { type: 'text', class: 'sheet-input', placeholder: t('pastePlaceholder'), autocomplete: 'off', spellcheck: false });
     const error = el('div', { class: 'issue skip hidden' });
@@ -46,17 +46,12 @@ export function renderStart(root, options) {
                 el('button', { class: 'icon small', title: t('forget'), onclick: () => options.onForget(r.id) }, '✕')))))
         : null;
 
-    const example = options.example?.id
-        ? el('p', {}, el('button', { class: 'link-btn', onclick: () => options.onOpen(options.example.id, options.example.gid ?? null) }, `🌿 ${t('openExample')}`))
-        : null;
-
     root.replaceChildren(el('div', { class: 'start card' },
         el('h1', {}, t('startTitle')),
         el('p', { class: 'muted' }, t('startIntro')),
         el('div', { class: 'inline wide' }, input, el('button', { class: 'btn primary', onclick: open }, t('open'))),
         error,
         el('div', { class: 'inline' }, pick, options.configured ? el('span', { class: 'muted small' }, t('pickHint')) : null),
-        example,
         recent,
         options.configured ? null : el('p', { class: 'issue warn' }, t('notConfigured'))));
     setTimeout(() => input.focus(), 0);

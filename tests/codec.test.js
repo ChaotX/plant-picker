@@ -16,7 +16,7 @@ const sample = {
         ]
     },
     o: [{ c: 'Max. magasság (m)', d: 'desc', by: 'max' }],
-    cols: ['Magyar név', 'Latin név', 'Típus']
+    cols: ['Név', 'Latin név', 'Típus']
 };
 
 test('round trip keeps the query', async () => {

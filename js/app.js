@@ -1,7 +1,6 @@
 // plant-picker: build a filter / sort query over a Google Sheet, see the matching rows live, and keep the query as
 // a link. ?q=<encoded query> is self-contained; ?l=<id> is a short link stored in the user's own Drive.
 
-import { EXAMPLE_SHEET } from './config.js';
 import { encodeQuery, decodeQuery, queryKey } from './codec.js';
 import { LoadError, findTab, loadSpreadsheet, loadTab } from './data.js';
 import { hasSignedInBefore, hasValidToken, isConfigured, requestToken, signOut } from './google-auth.js';
@@ -73,7 +72,6 @@ function showStart() {
     history.replaceState(null, '', location.pathname);
     renderStart($('#startScreen'), {
         recent: storage.get(RECENT_KEY, []),
-        example: EXAMPLE_SHEET,
         configured: isConfigured(),
         onOpen: (id, gid) => openQuery(emptyQuery(id, gid ?? null, '')),
         onPick: pickFromDrive,

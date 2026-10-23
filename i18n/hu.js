@@ -8,7 +8,6 @@ export default {
     pickFromDrive: 'Kiválasztás a Google Drive-ból',
     pickHint: 'Privát táblázatok: itt egyszer válaszd ki őket, utána a linkjeik működnek.',
     pickTitle: 'Válassz táblázatot',
-    openExample: 'A minta növénytáblázat megnyitása',
     recentTitle: 'Legutóbbi táblázatok',
     forget: 'Törlés a listáról',
     notConfigured: 'A Google-bejelentkezés nincs beállítva (js/config.js), ezért csak nyilvánosan megosztott táblázatok nyithatók meg.',

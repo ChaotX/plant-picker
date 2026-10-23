@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildTable, countValues } from '../js/profile.js';
 import { emptyQuery, newFilter, runQuery } from '../js/query.js';
-import { header, raw, text } from './fixtures/plants-sample.js';
+import { header, raw, text } from './fixtures/sample-plants.js';
 
 const table = buildTable(header, raw, text);
 const col = name => table.headers.indexOf(name);
@@ -45,10 +45,10 @@ test('range overlap and within', () => {
 });
 
 test('list contains any / all', () => {
-    const any = runQuery(query([{ ...newFilter('Kerttípus / felhasználás', 'has'), v: ['Szoliter', 'Sövény'] }]), table).rows;
-    const both = runQuery(query([{ ...newFilter('Kerttípus / felhasználás', 'has'), v: ['Szoliter', 'Sövény'], all: true }]), table).rows;
+    const any = runQuery(query([{ ...newFilter('Felhasználás', 'has'), v: ['Szoliter', 'Sövény'] }]), table).rows;
+    const both = runQuery(query([{ ...newFilter('Felhasználás', 'has'), v: ['Szoliter', 'Sövény'], all: true }]), table).rows;
     assert.ok(any.length >= both.length);
-    assert.ok(both.every(r => /szoliter/i.test(cell(r, 'Kerttípus / felhasználás')) && /sövény/i.test(cell(r, 'Kerttípus / felhasználás'))));
+    assert.ok(both.every(r => /szoliter/i.test(cell(r, 'Felhasználás')) && /sövény/i.test(cell(r, 'Felhasználás'))));
 });
 
 test('text: contains, wildcard, regex, equals', () => {
@@ -56,7 +56,7 @@ test('text: contains, wildcard, regex, equals', () => {
     assert.ok(run({ x: 'pinus' }).length > 0);
     assert.deepEqual(run({ m: 'wildcard', x: 'pinus*' }), run({ m: 'regex', x: '^pinus' }));
     assert.equal(run({ m: 'wildcard', x: 'pinus' }).length, 0);
-    assert.equal(run({ m: 'equals', x: 'tilia americana \'nova\'' }).length, 1);
+    assert.equal(run({ m: 'equals', x: 'tilia CORDATA' }).length, 1);
     assert.equal(run({ x: 'PINUS', cs: true }).length, 0);
 });
 
@@ -83,7 +83,7 @@ test('an excluded group', () => {
 });
 
 test('sort numeric by max, descending, empties last; then by name', () => {
-    const q = query([], 'and', { o: [{ c: 'Max. magasság (m)', d: 'desc', by: 'max' }, { c: 'Magyar név', d: 'asc' }] });
+    const q = query([], 'and', { o: [{ c: 'Max. magasság (m)', d: 'desc', by: 'max' }, { c: 'Név', d: 'asc' }] });
     const { rows } = runQuery(q, table);
     const values = rows.map(r => Number(table.raw[r][col('Max. magasság (m)')]));
     for (let i = 1; i < values.length; i++) assert.ok(values[i - 1] >= values[i]);
@@ -132,7 +132,7 @@ test('value counts within given rows: whole values, scale parts, list items', ()
     const evelo = rows.filter(r => cell(r, 'Típus') === 'Évelő');
     const types = countValues(table.text, evelo, col('Típus'));
     assert.deepEqual([...types], [['évelő', evelo.length]]);
-    const uses = countValues(table.text, rows, col('Kerttípus / felhasználás'), 'tokens');
+    const uses = countValues(table.text, rows, col('Felhasználás'), 'tokens');
     assert.ok(uses.get('szoliter') > 1);
 });
 

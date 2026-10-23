@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildTable } from '../js/profile.js';
 import { emptyQuery, findColumn, newFilter, runQuery } from '../js/query.js';
-import { header, raw, text } from './fixtures/plants-sample.js';
+import { header, raw, text } from './fixtures/sample-plants.js';
 
 const table = buildTable(header, raw, text);
 
@@ -85,7 +85,7 @@ test('a range filter on a column that stopped being numeric warns', () => {
 
 test('missing sort and visible columns are noted and dropped', () => {
     const changed = withoutColumn('Típus');
-    const q = query([], { o: [{ c: 'Típus', d: 'asc' }], cols: ['Magyar név', 'Típus'] });
+    const q = query([], { o: [{ c: 'Típus', d: 'asc' }], cols: ['Név', 'Típus'] });
     const { notes, visible, sort } = runQuery(q, changed);
     assert.equal(sort.length, 0);
     assert.deepEqual(visible, [0]);

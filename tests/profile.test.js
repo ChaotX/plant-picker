@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildTable, filterKindsFor, isSet, parseNumber, parseRange, splitList, splitParts } from '../js/profile.js';
-import { header, raw, text } from './fixtures/plants-sample.js';
+import { header, raw, text } from './fixtures/sample-plants.js';
 
 const table = buildTable(header, raw, text);
 const kindOf = name => table.profiles[table.headers.indexOf(name)].kind;
@@ -49,18 +49,18 @@ test('column kinds of the plant sheet', () => {
     assert.equal(kindOf('Fényigény'), 'enum');
     assert.equal(kindOf('Magasság (m)'), 'range');
     assert.equal(kindOf('Max. magasság (m)'), 'range');
-    assert.equal(kindOf('Bruttó ár (Ft)'), 'range');
+    assert.equal(kindOf('Ár (Ft)'), 'range');
     assert.equal(kindOf('Mérgező'), 'flag');
     assert.equal(kindOf('Máj'), 'flag');
-    assert.equal(kindOf('Kerttípus / felhasználás'), 'list');
+    assert.equal(kindOf('Felhasználás'), 'list');
     assert.equal(kindOf('Megjegyzés'), 'text');
-    assert.equal(kindOf('Magyar név'), 'text');
+    assert.equal(kindOf('Név'), 'text');
 });
 
 test('scale parts and list items are offered, capitalized', () => {
     const light = table.profiles[table.headers.indexOf('Fényigény')];
     assert.ok(light.parts.some(p => p.value === 'Félárnyék'));
-    const use = table.profiles[table.headers.indexOf('Kerttípus / felhasználás')];
+    const use = table.profiles[table.headers.indexOf('Felhasználás')];
     assert.ok(use.tokens.some(t => t.value === 'Szoliter'));
     assert.deepEqual(filterKindsFor(light).slice(0, 1), ['in']);
     assert.deepEqual(filterKindsFor(use).slice(0, 1), ['has']);
