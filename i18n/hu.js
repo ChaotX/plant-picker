@@ -160,8 +160,8 @@ export default {
     sortByMax: 'felső érték szerint',
     sortByHint: 'A 2–3-hoz hasonló értékeknél',
     addSort: 'Rendezés',
-    moveUp: 'Fel',
-    moveDown: 'Le',
+    moveUp: 'Feljebb',
+    moveDown: 'Lejjebb',
     columnsTitle: 'Látható oszlopok ({n} / {total})',
     columnsAuto: 'Automatikus: az első kettő és a szűrt / rendezett oszlopok',
 

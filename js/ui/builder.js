@@ -6,11 +6,7 @@ import { t } from '../i18n.js';
 import { countValues, filterKindsFor, fold, parseNumber } from '../profile.js';
 import { findColumn, isGroup, newFilter, nodeAt, parentOf, walk } from '../query.js';
 import { el, option } from './dom.js';
-import { debounce, storage } from '../util.js';
-
-// Value lists offer only the values of the rows that pass the filters above (default), or all of the column's.
-const NARROW_KEY = 'plant-picker:narrowValues';
-let narrowValues = storage.get(NARROW_KEY, true) !== false;
+import { debounce } from '../util.js';
 
 const KIND_ICON = { flag: '◐', range: '↔', enum: '☰', list: '⋯', text: 'T' };
 const CHECKLIST_SEARCH_FROM = 10;
@@ -20,6 +16,15 @@ const CHECKLIST_SEARCH_FROM = 10;
 export function renderBuilder(root, ctx) {
     root.classList.toggle('collapsed', Boolean(ctx.collapsed));
     root.replaceChildren(renderHead(root, ctx), el('div', { class: 'builder-body' }, renderBody(ctx)));
+    if (ctx.scrollTo) {
+        const card = root.querySelector(`.card[data-path="${ctx.scrollTo}"]`);
+        ctx.scrollTo = null;
+        if (card) {
+            card.scrollIntoView({ block: 'nearest' });
+            card.classList.add('moved');
+            setTimeout(() => card.classList.remove('moved'), 600);
+        }
+    }
 }
 
 function setCollapsed(root, ctx, collapsed) {
@@ -121,6 +126,28 @@ function addGroup(ctx) {
     ctx.onChange(true);
 }
 
+// Moves a filter or group one place up (-1) or down (+1) among its siblings. The result doesn't change, but the
+// values offered and the running counts follow the order.
+function moveNode(ctx, path, delta) {
+    const { parent, index } = parentOf(ctx.query, path);
+    const to = index + delta;
+    if (to < 0 || to >= parent.items.length) return;
+    [parent.items[index], parent.items[to]] = [parent.items[to], parent.items[index]];
+    ctx.scrollTo = [...path.split('.').slice(0, -1), String(to)].join('.');
+    ctx.onChange(true);
+}
+
+function moveButtons(ctx, path, count) {
+    const index = Number(path.split('.').pop());
+    return el('span', { class: 'move' },
+        el('button', { class: 'icon', title: t('moveUp'), 'aria-label': t('moveUp'), disabled: index === 0, onclick: () => moveNode(ctx, path, -1) }, '↑'),
+        el('button', { class: 'icon', title: t('moveDown'), 'aria-label': t('moveDown'), disabled: index === count - 1, onclick: () => moveNode(ctx, path, 1) }, '↓'));
+}
+
+function siblingCount(ctx, path) {
+    return parentOf(ctx.query, path).parent.items.length;
+}
+
 function removeNode(ctx, path) {
     const { parent, index } = parentOf(ctx.query, path);
     parent.items.splice(index, 1);
@@ -155,6 +182,7 @@ function renderGroup(group, path, ctx) {
             excludeToggle(group, ctx),
             el('span', { class: 'badge', title: t('badgeHint') }),
             el('span', { class: 'chain' }),
+            moveButtons(ctx, path, siblingCount(ctx, path)),
             el('button', { class: 'icon', title: t('remove'), onclick: () => removeNode(ctx, path) }, '✕')),
         el('div', { class: 'filter-list' }, group.items.map((child, i) => renderFilter(child, `${path}.${i}`, ctx))),
         el('div', { class: 'add-row' }, el('button', { class: 'btn small ghost', onclick: () => addFilter(group, ctx) }, `+ ${t('addFilterToGroup')}`)),
@@ -188,6 +216,7 @@ function renderFilter(filter, path, ctx) {
             excludeToggle(filter, ctx),
             el('span', { class: 'badge', title: t('badgeHint') }),
             el('span', { class: 'chain' }),
+            moveButtons(ctx, path, siblingCount(ctx, path)),
             el('button', { class: 'icon', title: t('remove'), onclick: () => removeNode(ctx, path) }, '✕')),
         el('div', { class: 'card-body' }, col.index >= 0 ? renderEditor(filter, table.profiles[col.index], ctx, { path, column: col.index }) : null),
         el('div', { class: 'issues' }));
@@ -246,7 +275,7 @@ function hasEditor(filter, profile, ctx, where) {
 
 // Checkboxes for the values of a column, with counts. Chosen values first, values gone from the sheet flagged.
 // refresh(result) (called after every run) offers only the values of the rows reaching this filter, unless that
-// is switched off; it rebuilds the boxes only when those counts change, so clicking a box doesn't reorder them.
+// is switched off for this filter (filter.wide); it rebuilds the boxes only when those counts change, so clicking a box doesn't reorder them.
 // where: { path, column, mode } — mode as in countValues.
 function checklist(filter, pool, ctx, where) {
     const box = el('div', { class: 'checklist' });
@@ -254,11 +283,10 @@ function checklist(filter, pool, ctx, where) {
     const updateSummary = () => {
         summary.textContent = filter.v.length ? t('chosenCount', { n: filter.v.length }) : t('noneChosen');
     };
-    const narrowInput = el('input', { type: 'checkbox', checked: narrowValues });
+    // Per filter, saved in the link: filter.wide offers every value of the column instead.
+    const narrowInput = el('input', { type: 'checkbox', checked: !filter.wide });
     narrowInput.addEventListener('change', () => {
-        narrowValues = narrowInput.checked;
-        storage.set(NARROW_KEY, narrowValues);
-        for (const other of document.querySelectorAll('.narrow-check input')) other.checked = narrowValues;
+        filter.wide = !narrowInput.checked;
         ctx.onChange(false);
     });
     const narrowNote = el('span', { class: 'muted small' });
@@ -320,9 +348,8 @@ function checklist(filter, pool, ctx, where) {
         const total = ctx.table.text.length;
         const narrowed = Boolean(rows) && rows.length < total;
         narrowLine.classList.toggle('hidden', !narrowed);
-        narrowInput.checked = narrowValues;
         narrowNote.textContent = narrowed ? t('narrowNote', { n: rows.length, total }) : '';
-        const counts = narrowed && narrowValues ? countValues(ctx.table.text, rows, where.column, where.mode) : null;
+        const counts = narrowed && !filter.wide ? countValues(ctx.table.text, rows, where.column, where.mode) : null;
         const next = counts ? JSON.stringify([...counts]) : 'all';
         if (next === signature) return;
         signature = next;

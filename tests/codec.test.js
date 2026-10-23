@@ -59,3 +59,13 @@ test('garbage is rejected', async () => {
     await assert.rejects(decodeQuery('j' + Buffer.from('{"a":1}').toString('base64url')));
     assert.throws(() => expand(null));
 });
+
+test('a filter offering every value (wide) keeps that in the link; the default adds nothing', async () => {
+    const wide = structuredClone(sample);
+    wide.q.items[0].wide = true;
+    const back = await decodeQuery(await encodeQuery(wide));
+    assert.equal(back.q.items[0].wide, true);
+    assert.equal(back.q.items[1].wide, false);
+    assert.equal('wide' in compact(sample).q.items[0], false);
+    assert.notEqual(queryKey(wide), queryKey(sample));
+});

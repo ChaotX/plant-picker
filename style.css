@@ -1021,3 +1021,16 @@ table.results dd {
     opacity: 0.6;
     border-style: dashed;
 }
+
+.move {
+    display: inline-flex;
+}
+
+.move .icon {
+    min-width: 26px;
+}
+
+.card.moved {
+    outline: 2px solid var(--green);
+    outline-offset: 2px;
+}

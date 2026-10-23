@@ -64,6 +64,7 @@ export function expand(data) {
         }
         if (f.k === 'flag') f.set = f.set !== false;
         if (f.k === 'in' || f.k === 'has') f.v = Array.isArray(f.v) ? f.v.map(String) : [];
+        if (f.k === 'in' || f.k === 'has') f.wide = Boolean(f.wide);
         return f;
     };
     return {
