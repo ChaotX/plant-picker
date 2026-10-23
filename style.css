@@ -1012,3 +1012,12 @@ table.results dd {
 .builder-title .btn {
     flex: none;
 }
+
+.narrow-line {
+    font-size: 13.5px;
+}
+
+.checklist .check.none {
+    opacity: 0.6;
+    border-style: dashed;
+}

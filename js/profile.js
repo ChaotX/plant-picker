@@ -109,6 +109,19 @@ function capitalize(text) {
     return text.charAt(0).toLocaleUpperCase('hu') + text.slice(1);
 }
 
+// How many of the given rows have each value of column ci (by folded key). mode: 'values' (whole cells), 'parts'
+// (scale parts: Napos–félárnyék counts for both) or 'tokens' (list items). A row counts once per value.
+export function countValues(text, rows, ci, mode = 'values') {
+    const counts = new Map();
+    for (const r of rows) {
+        const cell = text[r][ci];
+        if (!cell) continue;
+        const list = mode === 'parts' ? splitParts(cell) : mode === 'tokens' ? splitList(cell) : [cell];
+        for (const key of new Set(list.map(fold))) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+}
+
 // Counts values by their folded key, remembering the most common spelling of each (items of lists and scales
 // are shown capitalized: 'szoliter' and 'Szoliter' are one item).
 function tally(values, capital = false) {

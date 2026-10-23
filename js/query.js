@@ -299,7 +299,7 @@ export function sortRows(rows, table, sort) {
     return decorated.map(d => d.r);
 }
 
-// Runs the query. Returns { rows (sorted row indexes), issues, notes, sort, visible, counts } where counts maps
+// Runs the query. Returns { rows (sorted row indexes), issues, notes, sort, visible, counts, contexts } where counts maps
 // each node path to { alone: rows it lets through by itself, upTo: rows matching it combined with the nodes
 // before it in its group (the running count along the and / or chain), without (top level only): rows if it
 // were removed }.
@@ -325,8 +325,28 @@ export function runQuery(query, table) {
         });
     };
     visit(query.q, '');
+
+    // contexts: path → the rows that reach this node: in an 'all of' group, those that pass the nodes before it
+    // (and whatever narrowed the group itself); in an 'any of' or excluded group the siblings don't narrow.
+    // The value lists of a filter are offered from these rows.
+    const contexts = new Map();
+    const passing = (items, from) => {
+        if (!items.length) return from;
+        const fn = resolveQuery({ ...query, q: { op: 'and', items } }, table).root;
+        return from.filter(r => fn(r) !== false);
+    };
+    const narrow = (group, prefix, from) => {
+        const chain = group.op !== 'or' && !group.not;
+        group.items.forEach((node, i) => {
+            const path = prefix ? `${prefix}.${i}` : String(i);
+            const here = chain ? passing(group.items.slice(0, i), from) : from;
+            contexts.set(path, here);
+            if (isGroup(node)) narrow(node, path, here);
+        });
+    };
+    narrow(query.q, '', all);
     const { sort, visible, notes } = resolveColumns(query, table);
-    return { rows: sortRows(rows, table, sort), issues, notes, sort, visible, counts };
+    return { rows: sortRows(rows, table, sort), issues, notes, sort, visible, counts, contexts };
 }
 
 export function cellIsLink(text) {

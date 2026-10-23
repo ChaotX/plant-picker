@@ -3,10 +3,14 @@
 // the query (so typing keeps focus).
 
 import { t } from '../i18n.js';
-import { filterKindsFor, fold, parseNumber } from '../profile.js';
+import { countValues, filterKindsFor, fold, parseNumber } from '../profile.js';
 import { findColumn, isGroup, newFilter, nodeAt, parentOf, walk } from '../query.js';
 import { el, option } from './dom.js';
-import { debounce } from '../util.js';
+import { debounce, storage } from '../util.js';
+
+// Value lists offer only the values of the rows that pass the filters above (default), or all of the column's.
+const NARROW_KEY = 'plant-picker:narrowValues';
+let narrowValues = storage.get(NARROW_KEY, true) !== false;
 
 const KIND_ICON = { flag: '◐', range: '↔', enum: '☰', list: '⋯', text: 'T' };
 const CHECKLIST_SEARCH_FROM = 10;
@@ -185,7 +189,7 @@ function renderFilter(filter, path, ctx) {
             el('span', { class: 'badge', title: t('badgeHint') }),
             el('span', { class: 'chain' }),
             el('button', { class: 'icon', title: t('remove'), onclick: () => removeNode(ctx, path) }, '✕')),
-        el('div', { class: 'card-body' }, col.index >= 0 ? renderEditor(filter, table.profiles[col.index], ctx) : null),
+        el('div', { class: 'card-body' }, col.index >= 0 ? renderEditor(filter, table.profiles[col.index], ctx, { path, column: col.index }) : null),
         el('div', { class: 'issues' }));
     if (ctx.focusLast) queueMicrotask(() => {
         if (!ctx.focusLast) return;
@@ -204,17 +208,17 @@ function replaceNode(ctx, path, node) {
 
 // ---------- editors ----------
 
-function renderEditor(filter, profile, ctx) {
+function renderEditor(filter, profile, ctx, where) {
     switch (filter.k) {
-        case 'in': return inEditor(filter, profile, ctx);
-        case 'has': return hasEditor(filter, profile, ctx);
+        case 'in': return inEditor(filter, profile, ctx, where);
+        case 'has': return hasEditor(filter, profile, ctx, where);
         case 'range': return rangeEditor(filter, profile, ctx);
         case 'flag': return flagEditor(filter, ctx);
         default: return textEditor(filter, ctx);
     }
 }
 
-function inEditor(filter, profile, ctx) {
+function inEditor(filter, profile, ctx, where) {
     const parts = profile.parts
         ? (() => {
             const input = el('input', { type: 'checkbox', checked: Boolean(filter.parts) });
@@ -225,11 +229,11 @@ function inEditor(filter, profile, ctx) {
             return el('label', { class: 'check hint-check', title: t('partsHint') }, input, t('parts'));
         })()
         : null;
-    const pool = filter.parts && profile.parts ? profile.parts : profile.values;
-    return el('div', {}, parts, checklist(filter, pool, ctx));
+    const byParts = Boolean(filter.parts && profile.parts);
+    return el('div', {}, parts, checklist(filter, byParts ? profile.parts : profile.values, ctx, { ...where, mode: byParts ? 'parts' : 'values' }));
 }
 
-function hasEditor(filter, profile, ctx) {
+function hasEditor(filter, profile, ctx, where) {
     const mode = el('select', { class: 'small-select' },
         option('any', t('hasAny'), !filter.all),
         option('all', t('hasAll'), Boolean(filter.all)));
@@ -237,54 +241,96 @@ function hasEditor(filter, profile, ctx) {
         filter.all = mode.value === 'all';
         ctx.onChange(false);
     });
-    return el('div', {}, el('div', { class: 'inline' }, el('span', {}, t('hasPrefix')), mode), checklist(filter, profile.tokens || profile.values, ctx));
+    return el('div', {}, el('div', { class: 'inline' }, el('span', {}, t('hasPrefix')), mode), checklist(filter, profile.tokens || profile.values, ctx, { ...where, mode: profile.tokens ? 'tokens' : 'values' }));
 }
 
-// Checkboxes for the values of a column (with counts); chosen values first, values gone from the sheet flagged.
-function checklist(filter, pool, ctx) {
-    const chosen = new Set(filter.v.map(fold));
-    const known = new Set(pool.map(v => fold(v.value)));
-    const items = [
-        ...filter.v.filter(v => !known.has(fold(v))).map(v => ({ value: v, count: 0, gone: true })),
-        ...pool.filter(v => chosen.has(fold(v.value))),
-        ...pool.filter(v => !chosen.has(fold(v.value)))
-    ];
+// Checkboxes for the values of a column, with counts. Chosen values first, values gone from the sheet flagged.
+// refresh(result) (called after every run) offers only the values of the rows reaching this filter, unless that
+// is switched off; it rebuilds the boxes only when those counts change, so clicking a box doesn't reorder them.
+// where: { path, column, mode } — mode as in countValues.
+function checklist(filter, pool, ctx, where) {
     const box = el('div', { class: 'checklist' });
     const summary = el('span', { class: 'muted small' });
     const updateSummary = () => {
         summary.textContent = filter.v.length ? t('chosenCount', { n: filter.v.length }) : t('noneChosen');
     };
-    for (const item of items) {
-        const input = el('input', { type: 'checkbox', checked: chosen.has(fold(item.value)) });
-        input.addEventListener('change', () => {
-            const key = fold(item.value);
-            filter.v = filter.v.filter(v => fold(v) !== key);
-            if (input.checked) filter.v.push(item.value);
-            updateSummary();
-            ctx.onChange(false);
-        });
-        box.append(el('label', { class: `check${item.gone ? ' gone' : ''}`, title: item.gone ? t('valueGone') : '' },
-            input,
-            el('span', { class: 'value' }, item.value),
-            el('span', { class: 'count' }, item.gone ? '⚠' : item.count)));
-    }
-    let search = null;
-    if (items.length >= CHECKLIST_SEARCH_FROM) {
-        search = el('input', { type: 'search', class: 'checklist-search', placeholder: t('searchValues') });
-        search.addEventListener('input', () => {
-            const q = fold(search.value);
-            for (const label of box.children) label.classList.toggle('hidden', Boolean(q) && !fold(label.textContent).includes(q));
-        });
-    }
-    const clear = el('button', {
-        class: 'link-btn small',
-        onclick: () => {
-            filter.v = [];
-            ctx.onChange(true);
-        }
-    }, t('clear'));
+    const narrowInput = el('input', { type: 'checkbox', checked: narrowValues });
+    narrowInput.addEventListener('change', () => {
+        narrowValues = narrowInput.checked;
+        storage.set(NARROW_KEY, narrowValues);
+        for (const other of document.querySelectorAll('.narrow-check input')) other.checked = narrowValues;
+        ctx.onChange(false);
+    });
+    const narrowNote = el('span', { class: 'muted small' });
+    const narrowLine = el('div', { class: 'inline narrow-line hidden' },
+        el('label', { class: 'check narrow-check', title: t('narrowHint') }, narrowInput, t('narrowValues')), narrowNote);
+    const search = el('input', { type: 'search', class: 'checklist-search hidden', placeholder: t('searchValues') });
+    const applySearch = () => {
+        const q = fold(search.value);
+        for (const label of box.querySelectorAll('label')) label.classList.toggle('hidden', Boolean(q) && !fold(label.textContent).includes(q));
+    };
+    search.addEventListener('input', applySearch);
+
+    // counts: Map of folded value → rows among those reaching the filter, or null for the whole column.
+    const render = counts => {
+        const chosen = new Set(filter.v.map(fold));
+        const known = new Set(pool.map(v => fold(v.value)));
+        const countOf = v => (counts ? counts.get(fold(v.value)) || 0 : v.count);
+        const rest = pool.filter(v => !chosen.has(fold(v.value)) && countOf(v) > 0);
+        if (counts) rest.sort((a, b) => countOf(b) - countOf(a));
+        const items = [
+            ...filter.v.filter(v => !known.has(fold(v))).map(v => ({ value: v, count: 0, gone: true })),
+            ...pool.filter(v => chosen.has(fold(v.value))).map(v => ({ value: v.value, count: countOf(v) })),
+            ...rest.map(v => ({ value: v.value, count: countOf(v) }))
+        ];
+        box.replaceChildren(...items.map(item => {
+            const input = el('input', { type: 'checkbox', checked: chosen.has(fold(item.value)) });
+            input.addEventListener('change', () => {
+                const key = fold(item.value);
+                filter.v = filter.v.filter(v => fold(v) !== key);
+                if (input.checked) filter.v.push(item.value);
+                updateSummary();
+                ctx.onChange(false);
+            });
+            const none = !item.gone && !item.count;
+            const hint = item.gone ? t('valueGone') : none ? t('valueFilteredOut') : '';
+            return el('label', { class: `check${item.gone ? ' gone' : ''}${none ? ' none' : ''}`, title: hint },
+                input,
+                el('span', { class: 'value' }, item.value),
+                el('span', { class: 'count' }, item.gone ? '⚠' : item.count));
+        }));
+        if (!items.length) box.append(el('span', { class: 'muted small' }, t('noValuesHere')));
+        search.classList.toggle('hidden', items.length < CHECKLIST_SEARCH_FROM && !search.value);
+        applySearch();
+    };
+
+    let signature = null;
+    const wrap = el('div', { class: 'checklist-wrap' },
+        narrowLine,
+        el('div', { class: 'inline' }, search, summary, el('button', {
+            class: 'link-btn small',
+            onclick: () => {
+                filter.v = [];
+                ctx.onChange(true);
+            }
+        }, t('clear'))),
+        box);
+    wrap.refresh = result => {
+        const rows = result.contexts.get(where.path);
+        const total = ctx.table.text.length;
+        const narrowed = Boolean(rows) && rows.length < total;
+        narrowLine.classList.toggle('hidden', !narrowed);
+        narrowInput.checked = narrowValues;
+        narrowNote.textContent = narrowed ? t('narrowNote', { n: rows.length, total }) : '';
+        const counts = narrowed && narrowValues ? countValues(ctx.table.text, rows, where.column, where.mode) : null;
+        const next = counts ? JSON.stringify([...counts]) : 'all';
+        if (next === signature) return;
+        signature = next;
+        render(counts);
+    };
+    render(null);
     updateSummary();
-    return el('div', { class: 'checklist-wrap' }, el('div', { class: 'inline' }, search, summary, clear), box);
+    return wrap;
 }
 
 function numberInput(value, placeholder, onValue) {
@@ -463,6 +509,7 @@ export function issueText(issue) {
 
 export function updateBuilder(root, ctx, result) {
     renderSummary(root, ctx, result);
+    for (const list of root.querySelectorAll('.checklist-wrap')) list.refresh?.(result);
     for (const card of root.querySelectorAll('.card[data-path]')) {
         const path = card.dataset.path;
         const badge = card.querySelector(':scope > .card-head > .badge');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTable } from '../js/profile.js';
+import { buildTable, countValues } from '../js/profile.js';
 import { emptyQuery, newFilter, runQuery } from '../js/query.js';
 import { header, raw, text } from './fixtures/plants-sample.js';
 
@@ -109,6 +109,31 @@ test('running counts along the chain: falling with and, rising with or, also ins
     const nested = runQuery(query([{ op: 'or', items: [f('Évelő'), f('Talajtakaró')] }]), table);
     assert.equal(nested.counts.get('0.1').upTo, or.counts.get('1').upTo);
     assert.equal(nested.counts.get('0.1').without, undefined);
+});
+
+test('contexts: the rows that reach each filter, for offering its values', () => {
+    const f = v => ({ ...newFilter('Típus', 'in'), v: [v] });
+    const poisonous = newFilter('Mérgező', 'flag');
+    const and = runQuery(query([poisonous, f('Évelő'), { op: 'or', items: [f('Évelő'), f('Talajtakaró')] }]), table);
+    assert.equal(and.contexts.get('0').length, table.text.length);
+    assert.equal(and.contexts.get('1').length, and.counts.get('0').alone);
+    assert.equal(and.contexts.get('2').length, and.counts.get('1').upTo);
+    // inside an 'any of' group the siblings don't narrow each other
+    assert.deepEqual(and.contexts.get('2.1'), and.contexts.get('2'));
+    const or = runQuery(query([poisonous, f('Évelő')], 'or'), table);
+    assert.equal(or.contexts.get('1').length, table.text.length);
+});
+
+test('value counts within given rows: whole values, scale parts, list items', () => {
+    const rows = table.text.map((_, r) => r);
+    const light = countValues(table.text, rows, col('Fényigény'), 'parts');
+    const lightWhole = countValues(table.text, rows, col('Fényigény'));
+    assert.ok(light.get('félárnyék') >= lightWhole.get('félárnyék'));
+    const evelo = rows.filter(r => cell(r, 'Típus') === 'Évelő');
+    const types = countValues(table.text, evelo, col('Típus'));
+    assert.deepEqual([...types], [['évelő', evelo.length]]);
+    const uses = countValues(table.text, rows, col('Kerttípus / felhasználás'), 'tokens');
+    assert.ok(uses.get('szoliter') > 1);
 });
 
 test('default visible columns: first two plus the used ones', () => {
