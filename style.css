@@ -1034,3 +1034,7 @@ table.results dd {
     outline: 2px solid var(--green);
     outline-offset: 2px;
 }
+
+.chain.idle, .chip-count.idle {
+    color: var(--orange);
+}

@@ -299,52 +299,58 @@ export function sortRows(rows, table, sort) {
     return decorated.map(d => d.r);
 }
 
-// Runs the query. Returns { rows (sorted row indexes), issues, notes, sort, visible, counts, contexts } where counts maps
-// each node path to { alone: rows it lets through by itself, upTo: rows matching it combined with the nodes
-// before it in its group (the running count along the and / or chain), without (top level only): rows if it
-// were removed }.
+// Runs the query. Returns { rows (sorted row indexes), issues, notes, sort, visible, counts, contexts }.
+// contexts maps each node path to the rows that reach it: in an 'all of' group, those that pass the nodes before
+// it (and whatever narrowed the group itself); in an 'any of' or excluded group the siblings don't narrow. The
+// value lists of a filter are offered from these rows.
+// counts maps each node path to { alone: rows it lets through by itself (whole table), upTo: rows matching it
+// combined with the nodes before it in its group, counted among the rows reaching the group (so the last node
+// of a group shows what the group lets through there), before / delta (not for the first node): the previous
+// node's upTo and the change, negative along 'all of' (rows removed), positive along 'any of' (rows added),
+// without (top level only): rows if it were removed }.
 export function runQuery(query, table) {
     const { root, issues } = resolveQuery(query, table);
     const all = table.text.map((_, r) => r);
     const rows = all.filter(r => root(r) !== false);
-    const countOf = q => {
+    const matching = (q, from) => {
+        if (!q.items.length) return from;
         const fn = resolveQuery({ ...query, q }, table).root;
-        return all.filter(r => fn(r) !== false).length;
+        return from.filter(r => fn(r) !== false);
     };
+
+    const contexts = new Map();
+    const narrow = (group, prefix, from) => {
+        const chain = group.op !== 'or' && !group.not;
+        group.items.forEach((node, i) => {
+            const path = prefix ? `${prefix}.${i}` : String(i);
+            const here = chain ? matching({ op: 'and', items: group.items.slice(0, i) }, from) : from;
+            contexts.set(path, here);
+            if (isGroup(node)) narrow(node, path, here);
+        });
+    };
+    narrow(query.q, '', all);
+
     const counts = new Map();
     const visit = (group, prefix) => {
+        const from = prefix ? contexts.get(prefix) : all;
         group.items.forEach((node, i) => {
             const path = prefix ? `${prefix}.${i}` : String(i);
             const entry = {
-                alone: countOf({ op: 'and', items: [node] }),
-                upTo: countOf({ op: group.op, items: group.items.slice(0, i + 1) })
+                alone: matching({ op: 'and', items: [node] }, all).length,
+                upTo: matching({ op: group.op, items: group.items.slice(0, i + 1) }, from).length
             };
-            if (!prefix) entry.without = countOf({ ...group, items: group.items.filter((_, j) => j !== i) });
+            if (!prefix) entry.without = matching({ ...group, items: group.items.filter((_, j) => j !== i) }, all).length;
+            if (prefix && i === 0) entry.reach = from.length; // rows reaching the group
+            if (i > 0) {
+                entry.before = counts.get(prefix ? `${prefix}.${i - 1}` : String(i - 1)).upTo;
+                entry.delta = entry.upTo - entry.before;
+            }
             counts.set(path, entry);
             if (isGroup(node)) visit(node, path);
         });
     };
     visit(query.q, '');
 
-    // contexts: path → the rows that reach this node: in an 'all of' group, those that pass the nodes before it
-    // (and whatever narrowed the group itself); in an 'any of' or excluded group the siblings don't narrow.
-    // The value lists of a filter are offered from these rows.
-    const contexts = new Map();
-    const passing = (items, from) => {
-        if (!items.length) return from;
-        const fn = resolveQuery({ ...query, q: { op: 'and', items } }, table).root;
-        return from.filter(r => fn(r) !== false);
-    };
-    const narrow = (group, prefix, from) => {
-        const chain = group.op !== 'or' && !group.not;
-        group.items.forEach((node, i) => {
-            const path = prefix ? `${prefix}.${i}` : String(i);
-            const here = chain ? passing(group.items.slice(0, i), from) : from;
-            contexts.set(path, here);
-            if (isGroup(node)) narrow(node, path, here);
-        });
-    };
-    narrow(query.q, '', all);
     const { sort, visible, notes } = resolveColumns(query, table);
     return { rows: sortRows(rows, table, sort), issues, notes, sort, visible, counts, contexts };
 }

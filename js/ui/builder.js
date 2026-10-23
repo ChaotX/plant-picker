@@ -550,10 +550,13 @@ export function updateBuilder(root, ctx, result) {
         const index = Number(path.split('.').pop());
         if (chain) {
             const group = path.includes('.') ? nodeAt(ctx.query, path.split('.').slice(0, -1).join('.')) : ctx.query.q;
-            const show = Boolean(count) && index > 0;
-            chain.textContent = show ? `→ ${count.upTo}` : '';
-            chain.title = show ? t(group.op === 'or' ? 'chainHintOr' : 'chainHintAnd', { n: count.upTo }) : '';
+            // The first node of a nested group: how many of the rows reaching the group it matches.
+            const first = Boolean(count) && index === 0 && count.reach !== undefined;
+            const show = Boolean(count) && (index > 0 || first);
+            chain.textContent = first ? `→ ${count.upTo}` : show ? chainText(count) : '';
+            chain.title = first ? t('chainHintFirst', { before: count.reach, after: count.upTo }) : show ? chainHint(count, group.op) : '';
             chain.classList.toggle('zero', show && count.upTo === 0);
+            chain.classList.toggle('idle', show && !first && count.delta === 0);
         }
         const issues = (result.issues.get(path) || []).filter(i => i.level !== 'info');
         const box = card.querySelector(':scope > .issues');
@@ -576,6 +579,19 @@ export function updateBuilder(root, ctx, result) {
     }
 }
 
+// The running count with what this node changed: '→ 117 (−70)' along 'all of', '→ 562 (+431)' along 'any of'.
+function chainText(count) {
+    const d = count.delta;
+    const change = d > 0 ? `+${d}` : d < 0 ? `−${-d}` : '±0';
+    return `→ ${count.upTo} (${change})`;
+}
+
+function chainHint(count, op) {
+    const params = { before: count.before, after: count.upTo, n: Math.abs(count.delta) };
+    if (op === 'or') return t(count.delta ? 'chainHintOr' : 'chainHintOrIdle', params);
+    return t(count.delta ? 'chainHintAnd' : 'chainHintAndIdle', params);
+}
+
 // The closed panel's one-liner: each top-level filter as a chip with the running count, joined by and / or,
 // then the sort. Clicking a chip opens the panel at that filter.
 function renderSummary(root, ctx, result) {
@@ -595,7 +611,7 @@ function renderSummary(root, ctx, result) {
             class: `chip${node.not ? ' excluded' : ''}${skipped ? ' skipped' : ''}`,
             dataset: { goto: path },
             title: text
-        }, el('span', { class: 'chip-text' }, text), count ? el('span', { class: 'chip-count' }, `→ ${count.upTo}`) : null));
+        }, el('span', { class: 'chip-text' }, text), count ? el('span', { class: `chip-count${i > 0 && count.delta === 0 ? ' idle' : ''}`, title: i > 0 ? chainHint(count, query.q.op) : '' }, i > 0 ? chainText(count) : `→ ${count.upTo}`) : null));
     });
     if (!parts.length) parts.push(el('span', { class: 'muted' }, t('noFiltersYet')));
     if (query.o.length) {

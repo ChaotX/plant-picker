@@ -136,6 +136,27 @@ test('value counts within given rows: whole values, scale parts, list items', ()
     assert.ok(uses.get('szoliter') > 1);
 });
 
+test('what each node changes along the chain: removed with and, added with or', () => {
+    const f = v => ({ ...newFilter('Típus', 'in'), v: [v] });
+    const and = runQuery(query([newFilter('Mérgező', 'flag'), f('Évelő'), newFilter('Mérgező', 'flag')]), table);
+    assert.equal(and.counts.get('0').delta, undefined);
+    assert.equal(and.counts.get('1').before, and.counts.get('0').upTo);
+    assert.ok(and.counts.get('1').delta <= 0);
+    assert.equal(and.counts.get('2').delta, 0); // the same filter again removes nothing
+    const or = runQuery(query([f('Évelő'), f('Talajtakaró'), f('Évelő')], 'or'), table);
+    assert.equal(or.counts.get('1').delta, or.counts.get('1').alone);
+    assert.equal(or.counts.get('2').delta, 0); // adds nothing new
+});
+
+test('inside a group the chain counts among the rows reaching the group', () => {
+    const f = v => ({ ...newFilter('Típus', 'in'), v: [v] });
+    const q = query([newFilter('Mérgező', 'flag'), { op: 'or', items: [f('Évelő'), f('Talajtakaró')] }]);
+    const { counts, rows } = runQuery(q, table);
+    assert.equal(counts.get('1.1').upTo, counts.get('1').upTo);
+    assert.equal(counts.get('1').upTo, rows.length);
+    assert.ok(counts.get('1.0').upTo <= counts.get('0').upTo);
+});
+
 test('default visible columns: first two plus the used ones', () => {
     const q = query([newFilter('Mérgező', 'flag')], 'and', { o: [{ c: 'Típus', d: 'asc' }] });
     const { visible } = runQuery(q, table);
