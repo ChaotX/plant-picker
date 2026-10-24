@@ -1,5 +1,5 @@
 // plant-picker on row-picker: the plant-specific settings. Every option and its default:
-// https://github.com/ChaotX/row-picker/blob/v1.0.0/js/settings.js
+// https://github.com/ChaotX/row-picker/blob/v1.1.0/js/settings.js
 //
 // storagePrefix and linksTitle keep their plant-picker values, so sign-in, recent sheets and saved short links
 // carry over. The Google values are public (they end up in the browser anyway); they are restricted to the
@@ -11,6 +11,11 @@ export default {
     linksTitle: 'plant-picker links',
     locale: 'hu',
     languages: ['hu', 'en'],
+    // The 12 month columns (● = flowers then) as one virtual "Virágzik" column: one filter, a month strip in the
+    // list, sorting by when flowering starts or ends.
+    columnGroups: [
+        { name: 'Virágzik', columns: ['Jan', 'Feb', 'Már', 'Ápr', 'Máj', 'Jún', 'Júl', 'Aug', 'Szep', 'Okt', 'Nov', 'Dec'], sequence: 'cyclic' }
+    ],
     strings: {
         hu: {
             startTitle: 'Növények válogatása Google-táblázatból',
